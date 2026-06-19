@@ -6,7 +6,7 @@
         <label class="text-base font-medium text-[#1F2937]">选择曲目：</label>
         <select
           v-model="selectedSongId"
-          class="px-4 py-2 border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E53935]"
+          class="px-4 py-2 border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E53935"
         >
           <option :value="null">请选择</option>
           <option v-for="song in songsStore.songs" :key="song.id" :value="song.id">
@@ -23,26 +23,30 @@
 
     <div v-else class="flex gap-5 h-[calc(100vh-8rem)]">
       <div class="w-64 bg-white rounded-xl border border-[#E5E7EB] flex flex-col shrink-0">
-        <div class="p-4 border-b border-[#E5E7EB]">
+        <div class="p-4 border-b border-[#E5E7EB] flex items-center justify-between">
           <h3 class="text-base font-semibold text-[#1F2937]">出勤面板</h3>
+          <span class="text-xs text-[#9CA3AF]">
+            {{ presentCount }}/{{ membersStore.members.length }} 到场
+          </span>
         </div>
         <div class="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
           <div
             v-for="member in membersStore.members"
             :key="member.id"
             class="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50"
+            :class="isAbsent(member.id) ? 'bg-red-50' : ''"
           >
             <div class="flex items-center gap-2">
               <div
-                class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold"
+                class="w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-semibold shrink-0"
                 :class="getHeightColor(member.height_range)"
               >
                 {{ member.name.charAt(0) }}
               </div>
-              <span class="text-base text-[#1F2937]">{{ member.name }}</span>
+              <span class="text-base text-[#1F2937">{{ member.name }}</span>
             </div>
             <button
-              class="px-3 py-1 rounded-full text-sm font-medium transition-colors"
+              class="px-3 py-1 rounded-full text-sm font-medium transition-colors shrink-0"
               :class="[
                 isPresent(member.id)
                   ? 'bg-green-100 text-green-700'
@@ -112,7 +116,7 @@
           <div class="flex-1"></div>
           <button
             class="btn-primary flex items-center gap-2"
-            :disabled="!substitutesStore.substitutes.length"
+            :disabled="!currentFormation || currentFormation.is_locked"
             @click="handleLock"
           >
             <Lock :size="16" />
@@ -179,23 +183,40 @@ const currentFormation = computed(() => {
   return formationsStore.currentFormation
 })
 
-const absentMemberIds = computed(() =>
-  substitutesStore.attendance
-    .filter((a) => a.song_id === selectedSongId.value && a.status === 'absent')
-    .map((a) => a.member_id)
-)
+const attendanceMap = computed(() => {
+  const m = new Map<number, 'present' | 'absent'>()
+  if (!selectedSongId.value) return m
+  const filtered = substitutesStore.attendance.filter((a) => a.song_id === selectedSongId.value)
+  const sorted = [...filtered].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+  for (const record of sorted) {
+    if (!m.has(record.member_id)) {
+      m.set(record.member_id, record.status)
+    }
+  }
+  return m
+})
 
 function isPresent(memberId: number) {
-  const record = substitutesStore.attendance.find(
-    (a) => a.member_id === memberId && a.song_id === selectedSongId.value
-  )
-  return record?.status !== 'absent'
+  const status = attendanceMap.value.get(memberId)
+  return status !== 'absent'
 }
 
 function isAbsent(memberId: number | null) {
   if (!memberId) return false
-  return absentMemberIds.value.includes(memberId)
+  return attendanceMap.value.get(memberId) === 'absent'
 }
+
+const absentMemberIds = computed(() =>
+  membersStore.members
+    .map((m) => m.id)
+    .filter((id) => isAbsent(id))
+)
+
+const presentCount = computed(() =>
+  membersStore.members
+    .map((m) => m.id)
+    .filter((id) => isPresent(id)).length
+)
 
 function getSubForMember(memberId: number) {
   return substitutesStore.substitutes.find((s) => s.absent_member_id === memberId)
@@ -232,7 +253,7 @@ function getHeightBg(memberId: number) {
 
 async function toggleAttendance(memberId: number) {
   if (!selectedSongId.value) return
-  const newStatus = isPresent(memberId) ? 'absent' : 'present'
+  const newStatus: 'present' | 'absent' = isPresent(memberId) ? 'absent' : 'present'
   try {
     await substitutesStore.markAttendance({
       member_id: memberId,
@@ -243,6 +264,8 @@ async function toggleAttendance(memberId: number) {
     if (newStatus === 'absent') {
       await substitutesStore.fetchRecommendations(selectedSongId.value, memberId)
       recommendationsMap.value.set(memberId, substitutesStore.recommendations)
+    } else {
+      recommendationsMap.value.delete(memberId)
     }
   } catch {
     alert('更新出勤状态失败')

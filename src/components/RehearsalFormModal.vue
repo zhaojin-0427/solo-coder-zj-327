@@ -28,14 +28,19 @@
             />
           </div>
           <div>
-            <label class="block text-base font-medium text-[#1F2937] mb-1.5">节拍错误</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-base font-medium text-[#1F2937]">节拍错误（错拍片段）</label>
+            </div>
             <div v-for="(err, idx) in form.beat_errors" :key="'b' + idx" class="flex gap-2 mb-2">
-              <input
+              <select
                 v-model="err.position_id"
-                type="text"
-                placeholder="位置ID"
-                class="flex-1 px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E53935]"
-              />
+                class="w-28 px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E53935]"
+              >
+                <option value="">选择位置</option>
+                <option v-for="p in positions" :key="p.position_id" :value="p.position_id">
+                  {{ p.position_id }}({{ getMemberShort(p.member_id) }})
+                </option>
+              </select>
               <input
                 v-model.number="err.beat_number"
                 type="number"
@@ -57,18 +62,23 @@
               class="text-sm text-[#E53935] font-medium hover:underline"
               @click="form.beat_errors.push({ position_id: '', beat_number: 0, description: '' })"
             >
-              + 添加节拍错误
+              + 添加错拍
             </button>
           </div>
           <div>
-            <label class="block text-base font-medium text-[#1F2937] mb-1.5">位置错误</label>
+            <div class="flex items-center justify-between mb-1.5">
+              <label class="block text-base font-medium text-[#1F2937]">位置错误（换位失误）</label>
+            </div>
             <div v-for="(err, idx) in form.position_errors" :key="'p' + idx" class="flex gap-2 mb-2">
-              <input
+              <select
                 v-model="err.position_id"
-                type="text"
-                placeholder="位置ID"
-                class="flex-1 px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E53935]"
-              />
+                class="w-28 px-3 py-2 border border-[#E5E7EB] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#E53935]"
+              >
+                <option value="">选择位置</option>
+                <option v-for="p in positions" :key="p.position_id" :value="p.position_id">
+                  {{ p.position_id }}({{ getMemberShort(p.member_id) }})
+                </option>
+              </select>
               <input
                 v-model="err.description"
                 type="text"
@@ -84,16 +94,16 @@
               class="text-sm text-[#E53935] font-medium hover:underline"
               @click="form.position_errors.push({ position_id: '', description: '' })"
             >
-              + 添加位置错误
+              + 添加换位失误
             </button>
           </div>
           <div>
-            <label class="block text-base font-medium text-[#1F2937] mb-1.5">老师备注</label>
+            <label class="block text-base font-medium text-[#1F2937] mb-1.5">老师提示</label>
             <textarea
               v-model="form.teacher_notes"
               rows="3"
               class="w-full px-4 py-2.5 border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E53935] focus:border-transparent"
-              placeholder="请输入备注"
+              placeholder="请输入老师提示或备注"
             ></textarea>
           </div>
           <div class="flex gap-3 pt-2">
@@ -109,9 +119,11 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { reactive, ref, computed } from 'vue'
 import { X } from 'lucide-vue-next'
 import { useRehearsalsStore } from '@/stores/rehearsals'
+import { useFormationsStore } from '@/stores/formations'
+import { useMembersStore } from '@/stores/members'
 
 const props = defineProps<{
   songId: number
@@ -124,7 +136,17 @@ const emit = defineEmits<{
 }>()
 
 const rehearsalsStore = useRehearsalsStore()
+const formationsStore = useFormationsStore()
+const membersStore = useMembersStore()
 const submitting = ref(false)
+
+const positions = computed(() => formationsStore.currentFormation?.positions || [])
+
+function getMemberShort(memberId: number | null) {
+  if (!memberId) return '空位'
+  const member = membersStore.getMemberById(memberId)
+  return member?.name?.charAt(0) || '?'
+}
 
 const form = reactive({
   date: new Date().toISOString().slice(0, 10),
@@ -137,9 +159,32 @@ const form = reactive({
 async function handleSubmit() {
   submitting.value = true
   try {
+    const errors: { position_id: string; error_type: string; beat_number?: number; description?: string }[] = []
+    form.beat_errors.forEach((e) => {
+      if (e.position_id) {
+        errors.push({
+          position_id: e.position_id,
+          error_type: 'beat_error',
+          beat_number: e.beat_number || undefined,
+          description: e.description || undefined,
+        })
+      }
+    })
+    form.position_errors.forEach((e) => {
+      if (e.position_id) {
+        errors.push({
+          position_id: e.position_id,
+          error_type: 'position_error',
+          description: e.description || undefined,
+        })
+      }
+    })
     await rehearsalsStore.createRehearsal({
       song_id: props.songId,
-      ...form,
+      date: form.date,
+      duration_minutes: form.duration_minutes,
+      teacher_notes: form.teacher_notes,
+      errors,
     })
     emit('saved')
     emit('close')

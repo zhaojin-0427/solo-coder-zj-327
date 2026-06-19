@@ -42,9 +42,14 @@
             <p class="text-sm text-[#6B7280]" v-if="currentFormation">
               版本 v{{ currentFormation.version }}
               <span v-if="currentFormation.is_locked" class="badge-accent ml-2 text-xs">已锁定</span>
+              <span class="ml-3">共排练 {{ rehearsalCount }} 次</span>
             </p>
           </div>
           <div class="flex gap-2">
+            <button class="btn-secondary flex items-center gap-1.5" @click="openRehearsalModal">
+              <FileText :size="16" />
+              排练记录
+            </button>
             <button class="btn-accent flex items-center gap-1.5" @click="handleGenerate">
               <Sparkles :size="16" />
               生成初稿
@@ -84,44 +89,92 @@
           />
         </div>
 
-        <div v-if="formationsStore.versions.length" class="mt-4 bg-white rounded-xl border border-[#E5E7EB] p-4">
-          <h3 class="text-base font-semibold text-[#1F2937] mb-3">版本历史</h3>
-          <div class="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
-            <button
-              v-for="f in formationsStore.versions"
-              :key="f.id"
-              class="shrink-0 px-4 py-2 rounded-lg border-2 text-sm font-medium transition-colors"
-              :class="[
-                currentFormation?.id === f.id
-                  ? 'border-[#E53935] bg-[#E53935]/5 text-[#E53935]'
-                  : 'border-[#E5E7EB] text-[#6B7280] hover:border-gray-300',
-              ]"
-              @click="formationsStore.loadFormationById(f.id)"
-            >
-              <span>v{{ f.version }}</span>
-              <span v-if="f.is_locked" class="ml-1 text-xs">🔒</span>
-              <span class="block text-xs text-[#9CA3AF] mt-0.5">{{ formatDate(f.created_at) }}</span>
-            </button>
+        <div class="mt-4 grid grid-cols-2 gap-4">
+          <div v-if="formationsStore.versions.length" class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <h3 class="text-base font-semibold text-[#1F2937] mb-3 flex items-center gap-2">
+              <History :size="16" class="text-[#E53935]" />
+              版本历史
+            </h3>
+            <div class="flex gap-3 overflow-x-auto pb-2 scrollbar-thin">
+              <button
+                v-for="f in formationsStore.versions"
+                :key="f.id"
+                class="shrink-0 px-4 py-2 rounded-lg border-2 text-sm font-medium transition-colors"
+                :class="[
+                  currentFormation?.id === f.id
+                    ? 'border-[#E53935] bg-[#E53935]/5 text-[#E53935]'
+                    : 'border-[#E5E7EB] text-[#6B7280] hover:border-gray-300',
+                ]"
+                @click="formationsStore.loadFormationById(f.id)"
+              >
+                <span>v{{ f.version }}</span>
+                <span v-if="f.is_locked" class="ml-1 text-xs">🔒</span>
+                <span class="block text-xs text-[#9CA3AF] mt-0.5">{{ formatDate(f.created_at) }}</span>
+              </button>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl border border-[#E5E7EB] p-4">
+            <h3 class="text-base font-semibold text-[#1F2937] mb-3 flex items-center gap-2 justify-between">
+              <span class="flex items-center gap-2">
+                <ClipboardList :size="16" class="text-[#FFB300]" />
+                最近排练
+              </span>
+              <button
+                class="text-xs text-[#E53935] font-medium hover:underline"
+                @click="openRehearsalModal"
+              >
+                + 添加记录
+              </button>
+            </h3>
+            <div class="space-y-2 max-h-[140px] overflow-y-auto scrollbar-thin">
+              <div
+                v-for="r in recentRehearsals"
+                :key="r.id"
+                class="p-2 rounded-lg bg-[#F9FAFB] text-sm border border-[#E5E7EB]"
+              >
+                <div class="flex justify-between">
+                  <span class="font-medium text-[#1F2937]">{{ r.date }}</span>
+                  <span class="text-[#9CA3AF] text-xs">{{ r.duration_minutes }}分钟</span>
+                </div>
+                <p v-if="r.teacher_notes" class="text-xs text-[#6B7280] mt-1 line-clamp-1">{{ r.teacher_notes }}</p>
+              </div>
+              <div v-if="!recentRehearsals.length" class="text-center py-4 text-sm text-[#9CA3AF]">
+                暂无排练记录
+              </div>
+            </div>
           </div>
         </div>
       </template>
     </div>
+
+    <RehearsalFormModal
+      v-if="showRehearsalModal && selectedSongId && currentSong"
+      :song-id="selectedSongId"
+      :song-name="currentSong.name"
+      @close="showRehearsalModal = false"
+      @saved="onRehearsalSaved"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { LayoutGrid, Sparkles, Save, Lock } from 'lucide-vue-next'
+import { LayoutGrid, Sparkles, Save, Lock, FileText, History, ClipboardList } from 'lucide-vue-next'
 import { useSongsStore } from '@/stores/songs'
 import { useFormationsStore } from '@/stores/formations'
 import { useMembersStore } from '@/stores/members'
+import { useRehearsalsStore } from '@/stores/rehearsals'
 import FormationCanvas from '@/components/FormationCanvas.vue'
+import RehearsalFormModal from '@/components/RehearsalFormModal.vue'
 
 const songsStore = useSongsStore()
 const formationsStore = useFormationsStore()
 const membersStore = useMembersStore()
+const rehearsalsStore = useRehearsalsStore()
 
 const selectedSongId = ref<number | null>(null)
+const showRehearsalModal = ref(false)
 
 const sortedSongs = computed(() =>
   [...songsStore.songs].sort((a, b) => a.performance_order - b.performance_order)
@@ -133,9 +186,30 @@ const currentSong = computed(() =>
 
 const currentFormation = computed(() => formationsStore.currentFormation)
 
+const recentRehearsals = computed(() =>
+  rehearsalsStore.rehearsals
+    .filter((r) => r.song_id === selectedSongId.value)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 5)
+)
+
+const rehearsalCount = computed(() =>
+  rehearsalsStore.rehearsals.filter((r) => r.song_id === selectedSongId.value).length
+)
+
 function selectSong(id: number) {
   selectedSongId.value = id
-  formationsStore.fetchFormation(id)
+  Promise.all([formationsStore.fetchFormation(id), rehearsalsStore.fetchRehearsals(id)])
+}
+
+function openRehearsalModal() {
+  showRehearsalModal.value = true
+}
+
+function onRehearsalSaved() {
+  if (selectedSongId.value) {
+    rehearsalsStore.fetchRehearsals(selectedSongId.value)
+  }
 }
 
 async function handleGenerate() {
@@ -151,6 +225,7 @@ async function handleSave() {
   if (!currentFormation.value) return
   try {
     await formationsStore.saveFormation(currentFormation.value.id, currentFormation.value.positions)
+    alert('保存成功')
   } catch {
     alert('保存失败，请重试')
   }
@@ -161,6 +236,7 @@ async function handleLock() {
   if (!confirm('锁定后不可修改，确认锁定吗？')) return
   try {
     await formationsStore.lockFormation(currentFormation.value.id)
+    alert('锁定成功')
   } catch {
     alert('锁定失败，请重试')
   }
@@ -179,6 +255,14 @@ function formatDate(dateStr: string) {
   const d = new Date(dateStr)
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`
 }
+
+watch(currentFormation, (f) => {
+  if (f && selectedSongId.value) {
+    if (!formationsStore.versions.find((v) => v.id === f.id)) {
+      formationsStore.fetchFormation(selectedSongId.value)
+    }
+  }
+})
 
 onMounted(() => {
   songsStore.fetchSongs()
