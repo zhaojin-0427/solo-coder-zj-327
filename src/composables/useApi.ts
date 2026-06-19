@@ -1,0 +1,91 @@
+import axios from 'axios'
+import type {
+  Song,
+  Member,
+  HeightRange,
+  Formation,
+  FormationVersion,
+  FormationPosition,
+  RehearsalRecord,
+  RehearsalDetail,
+  SubstituteAssignment,
+  AttendanceRecord,
+  SubstituteRecommend,
+  OverviewStats,
+  RehearsalCountItem,
+  SubstituteRateItem,
+  ErrorPositionItem,
+  AttendanceStatItem,
+} from '@/types'
+
+const api = axios.create({
+  baseURL: '/api',
+  timeout: 15000,
+  headers: { 'Content-Type': 'application/json' },
+})
+
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    console.error('API Error:', err.response?.data || err.message)
+    return Promise.reject(err)
+  }
+)
+
+export function useApi() {
+  return {
+    songs: {
+      list: () => api.get<Song[]>('/songs').then((r) => r.data),
+      get: (id: number) => api.get<Song>(`/songs/${id}`).then((r) => r.data),
+      create: (data: Partial<Song>) => api.post<Song>('/songs', data).then((r) => r.data),
+      update: (id: number, data: Partial<Song>) => api.put<Song>(`/songs/${id}`, data).then((r) => r.data),
+      delete: (id: number) => api.delete(`/songs/${id}`).then((r) => r.data),
+    },
+    members: {
+      list: () => api.get<Member[]>('/members').then((r) => r.data),
+      get: (id: number) => api.get<Member>(`/members/${id}`).then((r) => r.data),
+      create: (data: { name: string; height_range: HeightRange; phone?: string; song_ids?: number[]; substitute_positions?: string[] }) =>
+        api.post<Member>('/members', data).then((r) => r.data),
+      update: (id: number, data: Partial<Member>) => api.put<Member>(`/members/${id}`, data).then((r) => r.data),
+      delete: (id: number) => api.delete(`/members/${id}`).then((r) => r.data),
+    },
+    formations: {
+      getCurrent: (songId: number) => api.get<Formation>(`/formations/${songId}`).then((r) => r.data),
+      getVersions: (songId: number) => api.get<FormationVersion[]>(`/formations/${songId}/versions`).then((r) => r.data),
+      getById: (id: number) => api.get<Formation>(`/formations/by-id/${id}`).then((r) => r.data),
+      generate: (songId: number) => api.post<Formation>(`/formations/generate/${songId}`).then((r) => r.data),
+      update: (id: number, data: { positions: { id: number; x?: number; y?: number; member_id?: number }[] }) =>
+        api.put<Formation>(`/formations/${id}`, data).then((r) => r.data),
+      lock: (id: number) => api.post<Formation>(`/formations/${id}/lock`).then((r) => r.data),
+    },
+    rehearsals: {
+      list: (songId?: number) =>
+        api.get<RehearsalRecord[]>('/rehearsals' + (songId ? `?song_id=${songId}` : '')).then((r) => r.data),
+      get: (id: number) => api.get<RehearsalDetail>(`/rehearsals/${id}`).then((r) => r.data),
+      create: (data: { song_id: number; date: string; duration_minutes?: number; teacher_notes?: string; errors?: { position_id: string; error_type: string; beat_number?: number; description?: string }[] }) =>
+        api.post<RehearsalRecord>('/rehearsals', data).then((r) => r.data),
+    },
+    substitutes: {
+      list: (songId: number) => api.get<SubstituteAssignment[]>(`/substitutes/${songId}`).then((r) => r.data),
+      recommend: (songId: number, absentMemberId: number) =>
+        api.get<SubstituteRecommend[]>(`/substitutes/recommend?song_id=${songId}&absent_member_id=${absentMemberId}`).then((r) => r.data),
+      assign: (data: { song_id: number; absent_member_id: number; substitute_member_id: number; position_id: string; priority?: number }) =>
+        api.post<SubstituteAssignment>('/substitutes/assign', data).then((r) => r.data),
+      updatePriority: (id: number, priority: number) =>
+        api.put<SubstituteAssignment>(`/substitutes/${id}/priority`, { priority }).then((r) => r.data),
+    },
+    attendance: {
+      mark: (data: { member_id: number; song_id: number; date: string; status: string }) =>
+        api.post<AttendanceRecord>('/substitutes/attendance', data).then((r) => r.data),
+      list: (songId: number) =>
+        api.get<AttendanceRecord[]>(`/substitutes/attendance?song_id=${songId}`).then((r) => r.data),
+    },
+    statistics: {
+      overview: () => api.get<OverviewStats>('/statistics/overview').then((r) => r.data),
+      rehearsalCounts: () => api.get<RehearsalCountItem[]>('/statistics/rehearsal-counts').then((r) => r.data),
+      substituteRates: () => api.get<SubstituteRateItem[]>('/statistics/substitute-rates').then((r) => r.data),
+      errorPositions: () => api.get<ErrorPositionItem[]>('/statistics/error-positions').then((r) => r.data),
+      attendance: () => api.get<AttendanceStatItem[]>('/statistics/attendance').then((r) => r.data),
+    },
+  }
+}
