@@ -97,11 +97,8 @@ export const usePerformancesStore = defineStore('performances', () => {
     phone_reminded?: boolean
   }) {
     const result = await api.performances.updateConfirmation(taskId, memberId, data)
-    if (currentPerformance.value && currentPerformance.value.confirmations) {
-      const idx = currentPerformance.value.confirmations.findIndex((c) => c.member_id === memberId)
-      if (idx >= 0) {
-        ;(currentPerformance.value.confirmations as PerformanceConfirmation[])[idx] = result
-      }
+    if (currentPerformance.value) {
+      await fetchWithSongDetails(taskId)
     }
     return result
   }
