@@ -310,8 +310,8 @@ async function handleSubmit() {
       location: form.value.location,
       meeting_time: formatSubmitDateTime(form.value.meeting_time),
       start_time: formatSubmitDateTime(form.value.start_time),
-      costume_requirements: form.value.costume_requirements || null,
-      notes: form.value.notes || null,
+      costume_requirements: form.value.costume_requirements !== '' ? form.value.costume_requirements : null,
+      notes: form.value.notes !== '' ? form.value.notes : null,
       song_tasks,
       member_ids: Array.from(selectedMemberIds.value),
     }

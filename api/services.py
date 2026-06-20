@@ -465,10 +465,10 @@ def update_performance_task(db: Session, task_id: int, data: dict) -> dict:
         task.meeting_time = data["meeting_time"]
     if "start_time" in data and data["start_time"] is not None:
         task.start_time = data["start_time"]
-    if "costume_requirements" in data and data["costume_requirements"] is not None:
-        task.costume_requirements = data["costume_requirements"]
-    if "notes" in data and data["notes"] is not None:
-        task.notes = data["notes"]
+    if "costume_requirements" in data:
+        task.costume_requirements = data["costume_requirements"] if data["costume_requirements"] not in (None, "") else None
+    if "notes" in data:
+        task.notes = data["notes"] if data["notes"] not in (None, "") else None
 
     if "song_tasks" in data and data["song_tasks"] is not None:
         db.query(PerformanceSongTask).filter(PerformanceSongTask.performance_id == task_id).delete()
@@ -554,6 +554,8 @@ def update_performance_confirmation(db: Session, task_id: int, member_id: int, d
         if data["status"] in ("confirmed", "leave"):
             from datetime import datetime
             conf.confirmed_at = datetime.now()
+        elif data["status"] == "unconfirmed":
+            conf.confirmed_at = None
     if "transport_mode" in data and data["transport_mode"] is not None:
         conf.transport_mode = data["transport_mode"]
     if "remark" in data and data["remark"] is not None:

@@ -43,7 +43,7 @@ def get_performance_with_song_details(task_id: int, db: Session = Depends(get_db
 
 @router.put("/{task_id}", response_model=PerformanceTaskResponse)
 def update_performance(task_id: int, data: PerformanceTaskUpdate, db: Session = Depends(get_db)):
-    result = services.update_performance_task(db, task_id, data.model_dump())
+    result = services.update_performance_task(db, task_id, data.model_dump(exclude_unset=True))
     if not result:
         raise HTTPException(status_code=404, detail="Performance task not found")
     return result
