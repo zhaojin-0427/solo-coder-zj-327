@@ -72,6 +72,88 @@
         </div>
       </div>
 
+      <div v-if="checkSummary" class="card">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-base font-semibold text-[#1F2937] flex items-center gap-2">
+            <ClipboardCheck class="text-[#E53935]" :size="18" />
+            演前检查进度
+          </h3>
+          <button
+            class="text-sm text-[#E53935] hover:underline"
+            @click="router.push('/pre-check')"
+          >
+            查看详情
+          </button>
+        </div>
+        <div class="flex items-center gap-4 mb-3">
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-gray-400"></div>
+            <span class="text-sm text-[#6B7280]">未开始 {{ checkSummary.not_started_count }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+            <span class="text-sm text-[#6B7280]">进行中 {{ checkSummary.in_progress_count }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-red-500"></div>
+            <span class="text-sm text-[#6B7280]">异常 {{ checkSummary.abnormal_count }}</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div class="w-3 h-3 rounded-full bg-green-500"></div>
+            <span class="text-sm text-[#6B7280]">已完成 {{ checkSummary.completed_count }}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="flex-1 h-3 bg-gray-100 rounded-full overflow-hidden flex">
+            <div
+              class="h-full bg-green-500 transition-all duration-300"
+              :style="{ width: checkSummary.completion_rate * 100 + '%' }"
+            ></div>
+            <div
+              class="h-full bg-red-500 transition-all duration-300"
+              :style="{ width: (checkSummary.abnormal_count / checkSummary.total_items) * 100 + '%' }"
+            ></div>
+            <div
+              class="h-full bg-blue-500 transition-all duration-300"
+              :style="{ width: (checkSummary.in_progress_count / checkSummary.total_items) * 100 + '%' }"
+            ></div>
+          </div>
+          <span class="text-sm font-semibold text-[#1F2937] w-12 text-right">
+            {{ (checkSummary.completion_rate * 100).toFixed(0) }}%
+          </span>
+        </div>
+
+        <div v-if="checkAbnormalItems.length" class="mt-4 pt-3 border-t border-[#E5E7EB]">
+          <h4 class="text-sm font-medium text-red-600 mb-2 flex items-center gap-1.5">
+            <AlertTriangle :size="14" />
+            异常项联动提示
+          </h4>
+          <div class="space-y-2">
+            <div
+              v-for="abn in checkAbnormalItems"
+              :key="abn.item_id"
+              class="flex items-start gap-2 text-sm"
+            >
+              <span class="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-700 font-medium shrink-0">
+                {{ CHECK_CATEGORY_MAP[abn.category] }}
+              </span>
+              <div class="flex-1">
+                <span class="text-[#1F2937]">{{ abn.item_name }}</span>
+                <span class="text-[#6B7280] mx-1">·</span>
+                <span class="text-[#6B7280]">{{ abn.song_name }}</span>
+                <span v-if="abn.position_id" class="text-[#6B7280] mx-1">·</span>
+                <span v-if="abn.position_id" class="text-yellow-600 font-medium">站位 {{ abn.position_id }} 存在风险</span>
+                <span v-if="abn.responsible_member_name" class="text-[#6B7280] mx-1">·</span>
+                <span v-if="abn.responsible_member_name" class="text-[#6B7280]">负责人: {{ abn.responsible_member_name }}</span>
+                <div v-if="abn.abnormal_description" class="text-red-500 text-xs mt-0.5">
+                  {{ abn.abnormal_description }}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="flex gap-2 mb-4">
         <button
           class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -86,6 +168,13 @@
           @click="activeTab = 'songs'"
         >
           曲目队形详情
+        </button>
+        <button
+          class="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+          :class="activeTab === 'checklist' ? 'bg-[#E53935] text-white' : 'bg-white text-[#6B7280] hover:bg-gray-50 border border-[#E5E7EB]'"
+          @click="activeTab = 'checklist'"
+        >
+          演前检查清单
         </button>
       </div>
 
@@ -275,10 +364,101 @@
               </div>
             </div>
           </div>
+
+          <div v-if="getSongAbnormalItems(songDetail.song_id).length" class="mt-4 pt-3 border-t border-[#E5E7EB]">
+            <h4 class="text-sm font-medium text-red-600 mb-2 flex items-center gap-1.5">
+              <AlertTriangle :size="14" />
+              该曲目检查异常项
+            </h4>
+            <div class="space-y-1">
+              <div
+                v-for="abn in getSongAbnormalItems(songDetail.song_id)"
+                :key="abn.item_id"
+                class="text-sm flex items-center gap-2"
+              >
+                <span class="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-700">{{ CHECK_CATEGORY_MAP[abn.category] }}</span>
+                <span class="text-[#1F2937]">{{ abn.item_name }}</span>
+                <span v-if="abn.position_id" class="text-yellow-600 text-xs">站位{{ abn.position_id }}风险</span>
+                <span v-if="abn.responsible_member_name" class="text-[#6B7280] text-xs">- {{ abn.responsible_member_name }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-if="!songDetails.length" class="card text-center py-8 text-[#9CA3AF]">
           暂无曲目数据
+        </div>
+      </div>
+
+      <div v-if="activeTab === 'checklist'" class="card">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold text-[#1F2937]">演前检查清单</h3>
+          <button
+            v-if="!checklistsStore.currentChecklist"
+            class="btn-primary text-sm flex items-center gap-1.5"
+            @click="generateChecklist"
+          >
+            <Plus :size="14" />
+            生成检查清单
+          </button>
+        </div>
+
+        <div v-if="!checklistsStore.currentChecklist" class="text-center py-8 text-[#9CA3AF]">
+          尚未生成检查清单，请点击上方按钮生成
+        </div>
+
+        <div v-else class="space-y-3">
+          <div
+            v-for="group in checklistGroupedItems"
+            :key="group.song_id"
+            class="border border-[#E5E7EB] rounded-lg p-4"
+          >
+            <div class="flex items-center gap-2 mb-3">
+              <Music class="text-[#E53935]" :size="16" />
+              <h4 class="text-base font-semibold text-[#1F2937]">{{ group.song_name }}</h4>
+            </div>
+            <div class="space-y-2">
+              <div
+                v-for="item in group.items"
+                :key="item.id"
+                class="flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50"
+              >
+                <span
+                  class="px-2 py-0.5 text-xs rounded-full font-medium shrink-0"
+                  :class="CHECK_STATUS_COLOR_MAP[item.status]"
+                >
+                  {{ CHECK_STATUS_MAP[item.status] }}
+                </span>
+                <span class="px-2 py-0.5 text-xs rounded-full bg-purple-100 text-purple-700 font-medium shrink-0">
+                  {{ CHECK_CATEGORY_MAP[item.category] }}
+                </span>
+                <span class="text-sm text-[#1F2937] flex-1">{{ item.item_name }}</span>
+                <span v-if="item.responsible_member_name" class="text-xs text-[#6B7280]">{{ item.responsible_member_name }}</span>
+                <div class="flex items-center gap-1">
+                  <button
+                    v-if="item.status === 'not_started'"
+                    class="px-2 py-1 text-xs text-blue-600 bg-blue-50 rounded hover:bg-blue-100"
+                    @click="startItem(item)"
+                  >开始</button>
+                  <button
+                    v-if="item.status === 'in_progress'"
+                    class="px-2 py-1 text-xs text-green-600 bg-green-50 rounded hover:bg-green-100"
+                    @click="completeItem(item)"
+                  >完成</button>
+                  <button
+                    v-if="item.status === 'in_progress' || item.status === 'not_started'"
+                    class="px-2 py-1 text-xs text-red-600 bg-red-50 rounded hover:bg-red-100"
+                    @click="openAbnormalFromDetail(item)"
+                  >异常</button>
+                  <button
+                    v-if="item.status === 'abnormal'"
+                    class="px-2 py-1 text-xs text-orange-600 bg-orange-50 rounded hover:bg-orange-100"
+                    @click="resolveItem(item)"
+                  >已解决</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -330,6 +510,38 @@
         </div>
       </div>
     </Teleport>
+
+    <Teleport to="body">
+      <div v-if="showAbnormalModal" class="modal-overlay" @click.self="showAbnormalModal = false">
+        <div class="modal-content w-[480px] p-6">
+          <h3 class="text-lg font-semibold text-[#1F2937] mb-4">标记异常</h3>
+          <div class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-[#1F2937] mb-1.5">检查项</label>
+              <p class="text-sm text-[#6B7280]">{{ abnormalItem?.item_name }}</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-[#1F2937] mb-1.5">异常说明</label>
+              <textarea
+                v-model="abnormalDescription"
+                class="input min-h-[100px] resize-none"
+                placeholder="请描述异常情况"
+              ></textarea>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-[#1F2937] mb-1.5">现场照片URL</label>
+              <input v-model="abnormalPhotoUrl" type="text" class="input" placeholder="照片链接地址（选填）" />
+            </div>
+          </div>
+          <div class="flex gap-3 mt-6">
+            <button class="btn-secondary flex-1" @click="showAbnormalModal = false">取消</button>
+            <button class="btn-primary flex-1" @click="submitAbnormal" :disabled="submittingAbnormal">
+              {{ submittingAbnormal ? '提交中...' : '确认异常' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
   </div>
 </template>
 
@@ -346,6 +558,8 @@ import {
   UserCheck,
   AlertTriangle,
   CheckCircle,
+  Plus,
+  ClipboardCheck,
 } from 'lucide-vue-next'
 import type {
   PerformanceConfirmation,
@@ -353,20 +567,28 @@ import type {
   SongPerformanceDetail,
   PerformanceTaskWithSongDetails,
   HeightRange,
+  CheckItem,
+  ChecklistSummary,
+  CheckItemAbnormalDetail,
 } from '@/types'
 import {
   CONFIRMATION_STATUS_MAP,
   CONFIRMATION_STATUS_COLOR_MAP,
+  CHECK_STATUS_MAP,
+  CHECK_STATUS_COLOR_MAP,
+  CHECK_CATEGORY_MAP,
 } from '@/types'
 import { usePerformancesStore } from '@/stores/performances'
 import { useMembersStore } from '@/stores/members'
+import { useChecklistsStore } from '@/stores/checklists'
 
 const route = useRoute()
 const router = useRouter()
 const performancesStore = usePerformancesStore()
 const membersStore = useMembersStore()
+const checklistsStore = useChecklistsStore()
 
-const activeTab = ref<'confirmations' | 'songs'>('confirmations')
+const activeTab = ref<'confirmations' | 'songs' | 'checklist'>('confirmations')
 const filterStatus = ref<string>('all')
 const showConfirmationModal = ref(false)
 const editingConfirmation = ref<PerformanceConfirmation | null>(null)
@@ -376,6 +598,15 @@ const confirmationForm = ref({
   transport_mode: '',
   remark: '',
 })
+
+const checkSummary = ref<ChecklistSummary | null>(null)
+const checkAbnormalItems = ref<CheckItemAbnormalDetail[]>([])
+
+const showAbnormalModal = ref(false)
+const abnormalItem = ref<CheckItem | null>(null)
+const abnormalDescription = ref('')
+const abnormalPhotoUrl = ref('')
+const submittingAbnormal = ref(false)
 
 const performance = computed(() => performancesStore.currentPerformance)
 
@@ -393,6 +624,22 @@ const filteredConfirmations = computed(() => {
   if (filterStatus.value === 'all') return confirmations.value
   return confirmations.value.filter((c) => c.status === filterStatus.value)
 })
+
+const checklistGroupedItems = computed(() => {
+  const items = checklistsStore.currentChecklist?.items || []
+  const groups: Record<number, { song_id: number; song_name: string; items: CheckItem[] }> = {}
+  for (const item of items) {
+    if (!groups[item.song_id]) {
+      groups[item.song_id] = { song_id: item.song_id, song_name: item.song_name, items: [] }
+    }
+    groups[item.song_id].items.push(item)
+  }
+  return Object.values(groups)
+})
+
+function getSongAbnormalItems(songId: number): CheckItemAbnormalDetail[] {
+  return checkAbnormalItems.value.filter((a) => a.song_id === songId)
+}
 
 function formatDateTime(dateStr: string): string {
   if (!dateStr) return ''
@@ -462,9 +709,91 @@ async function markPhoneReminded(conf: PerformanceConfirmation) {
   }
 }
 
+async function generateChecklist() {
+  const taskId = Number(route.params.id)
+  try {
+    await checklistsStore.generateChecklist(taskId)
+    await loadCheckData(taskId)
+  } catch {
+    alert('生成检查清单失败，请重试')
+  }
+}
+
+async function startItem(item: CheckItem) {
+  try {
+    await checklistsStore.updateItem(item.id, { status: 'in_progress' })
+    await loadCheckData(Number(route.params.id))
+  } catch {
+    alert('操作失败')
+  }
+}
+
+async function completeItem(item: CheckItem) {
+  try {
+    await checklistsStore.updateItem(item.id, { status: 'completed' })
+    await loadCheckData(Number(route.params.id))
+  } catch {
+    alert('操作失败')
+  }
+}
+
+async function resolveItem(item: CheckItem) {
+  try {
+    await checklistsStore.updateItem(item.id, { status: 'completed', abnormal_description: '' })
+    await loadCheckData(Number(route.params.id))
+  } catch {
+    alert('操作失败')
+  }
+}
+
+function openAbnormalFromDetail(item: CheckItem) {
+  abnormalItem.value = item
+  abnormalDescription.value = ''
+  abnormalPhotoUrl.value = ''
+  showAbnormalModal.value = true
+}
+
+async function submitAbnormal() {
+  if (!abnormalItem.value) return
+  submittingAbnormal.value = true
+  try {
+    await checklistsStore.updateItem(abnormalItem.value.id, {
+      status: 'abnormal',
+      abnormal_description: abnormalDescription.value || undefined,
+      photo_url: abnormalPhotoUrl.value || undefined,
+    })
+    showAbnormalModal.value = false
+    await loadCheckData(Number(route.params.id))
+  } catch {
+    alert('提交失败')
+  } finally {
+    submittingAbnormal.value = false
+  }
+}
+
+async function loadCheckData(taskId: number) {
+  try {
+    checkSummary.value = await checklistsStore.fetchSummary(taskId)
+  } catch {
+    checkSummary.value = null
+  }
+  try {
+    await checklistsStore.fetchAbnormalItems(taskId)
+    checkAbnormalItems.value = checklistsStore.abnormalItems
+  } catch {
+    checkAbnormalItems.value = []
+  }
+  try {
+    await checklistsStore.fetchChecklist(taskId)
+  } catch {
+    // no checklist yet
+  }
+}
+
 onMounted(async () => {
   const taskId = Number(route.params.id)
   await membersStore.fetchMembers()
   await performancesStore.fetchWithSongDetails(taskId)
+  await loadCheckData(taskId)
 })
 </script>

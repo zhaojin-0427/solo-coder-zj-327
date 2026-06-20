@@ -216,3 +216,48 @@ class PerformanceConfirmation(Base):
         CheckConstraint("status IN ('unconfirmed', 'confirmed', 'leave')", name="ck_perf_conf_status"),
         UniqueConstraint("performance_id", "member_id", name="uq_perf_member_conf"),
     )
+
+
+class PrePerformanceChecklist(Base):
+    __tablename__ = "pre_performance_checklists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    performance_id = Column(Integer, ForeignKey("performance_tasks.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+    performance = relationship("PerformanceTask")
+    items = relationship("PrePerformanceCheckItem", back_populates="checklist", cascade="all, delete-orphan")
+
+
+class PrePerformanceCheckItem(Base):
+    __tablename__ = "pre_performance_check_items"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    checklist_id = Column(Integer, ForeignKey("pre_performance_checklists.id", ondelete="CASCADE"), nullable=False)
+    song_id = Column(Integer, ForeignKey("songs.id", ondelete="CASCADE"), nullable=False)
+    category = Column(String(30), nullable=False)
+    item_name = Column(String(200), nullable=False)
+    responsible_member_id = Column(Integer, ForeignKey("members.id", ondelete="SET NULL"), nullable=True)
+    position_id = Column(String(20), nullable=True)
+    deadline = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False, default="not_started")
+    abnormal_description = Column(Text)
+    photo_url = Column(String(500))
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    checklist = relationship("PrePerformanceChecklist", back_populates="items")
+    song = relationship("Song")
+    responsible_member = relationship("Member")
+
+    __table_args__ = (
+        CheckConstraint(
+            "category IN ('costume', 'prop', 'audio', 'accompaniment', 'transport', 'substitute')",
+            name="ck_check_item_category",
+        ),
+        CheckConstraint(
+            "status IN ('not_started', 'in_progress', 'abnormal', 'completed')",
+            name="ck_check_item_status",
+        ),
+    )

@@ -115,6 +115,108 @@
           </table>
         </div>
       </div>
+
+      <div class="card xl:col-span-2">
+        <h3 class="text-lg font-semibold text-[#1F2937] mb-4">演前准备统计</h3>
+        <div v-if="!checklistsStore.preCheckStats.length && !checklistsStore.memberRank.length" class="text-center py-8 text-[#9CA3AF]">
+          暂无演前检查数据
+        </div>
+        <div v-else class="space-y-6">
+          <div>
+            <h4 class="text-base font-medium text-[#1F2937] mb-3">各演出检查完成率</h4>
+            <div v-if="!checklistsStore.preCheckStats.length" class="text-sm text-[#9CA3AF]">暂无数据</div>
+            <div v-else class="space-y-3">
+              <div
+                v-for="item in checklistsStore.preCheckStats"
+                :key="item.performance_id"
+                class="flex items-center gap-3"
+              >
+                <span class="text-sm text-[#1F2937] w-40 truncate font-medium">{{ item.performance_name }}</span>
+                <span class="text-xs text-[#6B7280] w-20">{{ item.performance_date }}</span>
+                <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                  <div
+                    class="h-full rounded-full transition-all duration-500"
+                    :class="getRateColor(item.completion_rate)"
+                    :style="{ width: item.completion_rate * 100 + '%' }"
+                  ></div>
+                </div>
+                <span class="text-sm font-semibold w-12 text-right" :class="getRateTextColor(item.completion_rate)">
+                  {{ (item.completion_rate * 100).toFixed(0) }}%
+                </span>
+                <span class="text-xs text-[#6B7280] w-16 text-right">
+                  {{ item.completed_count }}/{{ item.total_items }}
+                </span>
+                <span
+                  v-if="item.abnormal_count > 0"
+                  class="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-700 font-medium"
+                >
+                  {{ item.abnormal_count }} 异常
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div>
+              <h4 class="text-base font-medium text-[#1F2937] mb-3">责任成员完成排行</h4>
+              <div v-if="!checklistsStore.memberRank.length" class="text-sm text-[#9CA3AF]">暂无数据</div>
+              <div v-else class="space-y-2 max-h-48 overflow-y-auto pr-2 scrollbar-thin">
+                <div
+                  v-for="(item, idx) in checklistsStore.memberRank"
+                  :key="item.member_id"
+                  class="flex items-center gap-3"
+                >
+                  <span class="text-sm font-medium w-6 text-right" :class="idx < 3 ? 'text-[#E53935]' : 'text-[#6B7280]'">
+                    {{ idx + 1 }}
+                  </span>
+                  <span class="text-sm text-[#1F2937] w-20 truncate">{{ item.member_name }}</span>
+                  <div class="flex-1 bg-gray-100 rounded-full h-4 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all duration-500"
+                      :class="getRateColor(item.completion_rate)"
+                      :style="{ width: item.completion_rate * 100 + '%' }"
+                    ></div>
+                  </div>
+                  <span class="text-xs font-semibold w-10 text-right" :class="getRateTextColor(item.completion_rate)">
+                    {{ (item.completion_rate * 100).toFixed(0) }}%
+                  </span>
+                  <span class="text-xs text-[#6B7280] w-20 text-right">
+                    {{ item.completed_count }}/{{ item.total_assigned }}项
+                  </span>
+                  <span
+                    v-if="item.abnormal_count > 0"
+                    class="text-xs text-red-500"
+                  >
+                    {{ item.abnormal_count }}异常
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h4 class="text-base font-medium text-[#1F2937] mb-3">高频异常类型</h4>
+              <div v-if="!checklistsStore.abnormalTypes.length" class="text-sm text-[#9CA3AF]">暂无异常数据</div>
+              <div v-else class="space-y-3">
+                <div
+                  v-for="item in checklistsStore.abnormalTypes"
+                  :key="item.category"
+                  class="flex items-center gap-3"
+                >
+                  <span class="text-sm text-[#1F2937] w-20 font-medium">{{ CHECK_CATEGORY_MAP[item.category] }}</span>
+                  <div class="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                    <div
+                      class="h-full bg-[#E53935] rounded-full transition-all duration-500"
+                      :style="{ width: (item.count / maxAbnormalCount) * 100 + '%' }"
+                    ></div>
+                  </div>
+                  <span class="text-sm font-semibold text-[#E53935] w-8 text-right">{{ item.count }}</span>
+                  <span class="text-xs text-[#6B7280]">次</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -134,11 +236,14 @@ import {
   ArcElement,
 } from 'chart.js'
 import { useStatisticsStore } from '@/stores/statistics'
+import { useChecklistsStore } from '@/stores/checklists'
 import type { ErrorPositionItem } from '@/types'
+import { CHECK_CATEGORY_MAP } from '@/types'
 
 ChartJS.register(Title, Tooltip, Legend, BarElement, CategoryScale, LinearScale, ArcElement)
 
 const statisticsStore = useStatisticsStore()
+const checklistsStore = useChecklistsStore()
 const heatmapRef = ref<HTMLCanvasElement>()
 
 const rehearsalChartData = computed(() => {
@@ -209,6 +314,10 @@ const attendanceList = computed(() => {
   return statisticsStore.attendanceStats
 })
 
+const maxAbnormalCount = computed(() => {
+  return Math.max(...checklistsStore.abnormalTypes.map((t) => t.count), 1)
+})
+
 function getRateColor(rate: number) {
   if (rate >= 0.8) return 'bg-green-500'
   if (rate >= 0.6) return 'bg-[#FFB300]'
@@ -275,7 +384,10 @@ watch(
 )
 
 onMounted(async () => {
-  await statisticsStore.fetchAll()
+  await Promise.all([
+    statisticsStore.fetchAll(),
+    checklistsStore.fetchAllStats(),
+  ])
   if (statisticsStore.errorPositions.length) {
     nextTick(() => drawHeatmap(statisticsStore.errorPositions))
   }

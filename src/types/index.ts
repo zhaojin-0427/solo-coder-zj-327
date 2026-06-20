@@ -243,3 +243,102 @@ export const CONFIRMATION_STATUS_COLOR_MAP: Record<PerformanceConfirmationStatus
   confirmed: 'bg-green-100 text-green-700',
   leave: 'bg-red-100 text-red-700',
 }
+
+export type CheckItemCategory = 'costume' | 'prop' | 'audio' | 'accompaniment' | 'transport' | 'substitute'
+export type CheckItemStatus = 'not_started' | 'in_progress' | 'abnormal' | 'completed'
+
+export interface CheckItem {
+  id: number
+  checklist_id: number
+  song_id: number
+  song_name: string
+  category: CheckItemCategory
+  item_name: string
+  responsible_member_id: number | null
+  responsible_member_name: string | null
+  position_id: string | null
+  deadline: string | null
+  status: CheckItemStatus
+  abnormal_description: string | null
+  photo_url: string | null
+  completed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export interface Checklist {
+  id: number
+  performance_id: number
+  created_at: string | null
+  items: CheckItem[]
+}
+
+export interface ChecklistSummary {
+  performance_id: number
+  performance_name: string
+  total_items: number
+  not_started_count: number
+  in_progress_count: number
+  abnormal_count: number
+  completed_count: number
+  completion_rate: number
+}
+
+export interface CheckItemAbnormalDetail {
+  item_id: number
+  item_name: string
+  category: CheckItemCategory
+  song_id: number
+  song_name: string
+  responsible_member_id: number | null
+  responsible_member_name: string | null
+  position_id: string | null
+  abnormal_description: string | null
+}
+
+export interface PreCheckStatItem {
+  performance_id: number
+  performance_name: string
+  performance_date: string
+  total_items: number
+  completed_count: number
+  abnormal_count: number
+  completion_rate: number
+}
+
+export interface MemberCompletionRankItem {
+  member_id: number
+  member_name: string
+  total_assigned: number
+  completed_count: number
+  abnormal_count: number
+  completion_rate: number
+}
+
+export interface FrequentAbnormalTypeItem {
+  category: CheckItemCategory
+  count: number
+}
+
+export const CHECK_CATEGORY_MAP: Record<CheckItemCategory, string> = {
+  costume: '服装',
+  prop: '道具',
+  audio: '音响',
+  accompaniment: '伴奏文件',
+  transport: '交通集合',
+  substitute: '替补到位',
+}
+
+export const CHECK_STATUS_MAP: Record<CheckItemStatus, string> = {
+  not_started: '未开始',
+  in_progress: '进行中',
+  abnormal: '异常',
+  completed: '已完成',
+}
+
+export const CHECK_STATUS_COLOR_MAP: Record<CheckItemStatus, string> = {
+  not_started: 'bg-gray-100 text-gray-700',
+  in_progress: 'bg-blue-100 text-blue-700',
+  abnormal: 'bg-red-100 text-red-700',
+  completed: 'bg-green-100 text-green-700',
+}

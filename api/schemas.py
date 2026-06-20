@@ -342,3 +342,99 @@ class PerformanceConfirmationStatItem(BaseModel):
     confirmation_rate: float
     phone_reminded_count: int
     phone_reminder_rate: float
+
+
+class CheckItemCreate(BaseModel):
+    song_id: int
+    category: str
+    item_name: str
+    responsible_member_id: Optional[int] = None
+    position_id: Optional[str] = None
+    deadline: Optional[datetime] = None
+
+
+class CheckItemUpdate(BaseModel):
+    status: Optional[str] = None
+    abnormal_description: Optional[str] = None
+    photo_url: Optional[str] = None
+
+
+class ChecklistGenerateRequest(BaseModel):
+    items: list[CheckItemCreate] = []
+
+
+class CheckItemResponse(BaseModel):
+    id: int
+    checklist_id: int
+    song_id: int
+    song_name: str
+    category: str
+    item_name: str
+    responsible_member_id: Optional[int] = None
+    responsible_member_name: Optional[str] = None
+    position_id: Optional[str] = None
+    deadline: Optional[datetime] = None
+    status: str
+    abnormal_description: Optional[str] = None
+    photo_url: Optional[str] = None
+    completed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChecklistResponse(BaseModel):
+    id: int
+    performance_id: int
+    created_at: Optional[datetime] = None
+    items: list[CheckItemResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ChecklistSummaryResponse(BaseModel):
+    performance_id: int
+    performance_name: str
+    total_items: int
+    not_started_count: int
+    in_progress_count: int
+    abnormal_count: int
+    completed_count: int
+    completion_rate: float
+
+
+class CheckItemAbnormalDetail(BaseModel):
+    item_id: int
+    item_name: str
+    category: str
+    song_id: int
+    song_name: str
+    responsible_member_id: Optional[int] = None
+    responsible_member_name: Optional[str] = None
+    position_id: Optional[str] = None
+    abnormal_description: Optional[str] = None
+
+
+class PreCheckStatItem(BaseModel):
+    performance_id: int
+    performance_name: str
+    performance_date: str
+    total_items: int
+    completed_count: int
+    abnormal_count: int
+    completion_rate: float
+
+
+class MemberCompletionRankItem(BaseModel):
+    member_id: int
+    member_name: str
+    total_assigned: int
+    completed_count: int
+    abnormal_count: int
+    completion_rate: float
+
+
+class FrequentAbnormalTypeItem(BaseModel):
+    category: str
+    count: int

@@ -28,7 +28,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { Music, LayoutGrid, Users, ArrowLeftRight, CalendarCheck, BarChart3 } from 'lucide-vue-next'
+import { Music, LayoutGrid, Users, ArrowLeftRight, CalendarCheck, ClipboardCheck, BarChart3 } from 'lucide-vue-next'
 
 const route = useRoute()
 
@@ -38,10 +38,12 @@ const navItems = [
   { path: '/members', label: '成员站位', icon: Users },
   { path: '/substitute', label: '替补调整', icon: ArrowLeftRight },
   { path: '/performances', label: '演出任务', icon: CalendarCheck },
+  { path: '/pre-check', label: '演前核验', icon: ClipboardCheck },
   { path: '/statistics', label: '统计分析', icon: BarChart3 },
 ]
 
 function isActive(path: string) {
+  if (path === '/performances' && route.path.startsWith('/performances/')) return true
   return route.path === path
 }
 </script>

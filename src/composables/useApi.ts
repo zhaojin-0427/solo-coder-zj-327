@@ -22,6 +22,13 @@ import type {
   PerformanceConfirmation,
   PerformanceSongTaskCreate,
   PerformanceConfirmationStatItem,
+  Checklist,
+  ChecklistSummary,
+  CheckItem,
+  CheckItemAbnormalDetail,
+  PreCheckStatItem,
+  MemberCompletionRankItem,
+  FrequentAbnormalTypeItem,
 } from '@/types'
 
 const api = axios.create({
@@ -133,6 +140,32 @@ export function useApi() {
         api.put<PerformanceConfirmation>(`/performances/${taskId}/confirmations/${memberId}`, data).then((r) => r.data),
       markPhoneReminded: (taskId: number, memberId: number) =>
         api.post<PerformanceConfirmation>(`/performances/${taskId}/confirmations/${memberId}/phone-reminded`).then((r) => r.data),
+    },
+    checklists: {
+      generate: (performanceId: number, items?: { song_id: number; category: string; item_name: string; responsible_member_id?: number; position_id?: string; deadline?: string }[]) =>
+        api.post<Checklist>(`/checklists/performances/${performanceId}`, { items: items || [] }).then((r) => r.data),
+      getByPerformance: (performanceId: number) =>
+        api.get<Checklist>(`/checklists/performances/${performanceId}`).then((r) => r.data),
+      getSummary: (performanceId: number) =>
+        api.get<ChecklistSummary>(`/checklists/performances/${performanceId}/summary`).then((r) => r.data),
+      getAbnormalItems: (performanceId: number) =>
+        api.get<CheckItemAbnormalDetail[]>(`/checklists/performances/${performanceId}/abnormal`).then((r) => r.data),
+      getMemberItems: (performanceId: number, memberId: number) =>
+        api.get<CheckItem[]>(`/checklists/performances/${performanceId}/member/${memberId}`).then((r) => r.data),
+      updateItem: (itemId: number, data: { status?: string; abnormal_description?: string; photo_url?: string }) =>
+        api.put<CheckItem>(`/checklists/items/${itemId}`, data).then((r) => r.data),
+      addItem: (performanceId: number, data: { song_id: number; category: string; item_name: string; responsible_member_id?: number; position_id?: string; deadline?: string }) =>
+        api.post<CheckItem>(`/checklists/performances/${performanceId}/items`, data).then((r) => r.data),
+      deleteItem: (itemId: number) =>
+        api.delete(`/checklists/items/${itemId}`).then((r) => r.data),
+      getAllSummaries: () =>
+        api.get<ChecklistSummary[]>('/checklists/summaries').then((r) => r.data),
+      getPreCheckStats: () =>
+        api.get<PreCheckStatItem[]>('/checklists/stats/pre-check').then((r) => r.data),
+      getMemberRank: () =>
+        api.get<MemberCompletionRankItem[]>('/checklists/stats/member-rank').then((r) => r.data),
+      getAbnormalTypes: () =>
+        api.get<FrequentAbnormalTypeItem[]>('/checklists/stats/abnormal-types').then((r) => r.data),
     },
   }
 }

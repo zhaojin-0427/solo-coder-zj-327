@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import engine, Base
-from routers import songs, members, formations, rehearsals, substitutes, statistics, performances
+from routers import songs, members, formations, rehearsals, substitutes, statistics, performances, checklists
 
 Base.metadata.create_all(bind=engine)
 
@@ -22,6 +22,7 @@ app.include_router(rehearsals.router)
 app.include_router(substitutes.router)
 app.include_router(statistics.router)
 app.include_router(performances.router)
+app.include_router(checklists.router)
 
 
 if __name__ == "__main__":
