@@ -1,10 +1,12 @@
 import math
+from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from models import (
     Song, Member, MemberSong, MemberSubstitutePosition,
     Formation, FormationPosition, Rehearsal, RehearsalError,
     Attendance, SubstituteAssignment,
+    PerformanceTask, PerformanceSongTask, PrePerformanceChecklist, PrePerformanceCheckItem,
 )
 from schemas import (
     FormationPositionUpdate,
@@ -370,3 +372,628 @@ def get_attendance_stats(db: Session) -> list[dict]:
             "attendance_rate": rate,
         })
     return items
+
+
+CATEGORY_DISPLAY = {
+    "costume": "服装",
+    "prop": "道具",
+    "audio": "音响",
+    "accompaniment": "伴奏文件",
+    "transport": "交通集合",
+    "substitute": "替补到位",
+}
+
+DEFAULT_CATEGORY_ITEMS = {
+    "costume": "服装检查",
+    "prop": "道具检查",
+    "audio": "音响设备检查",
+    "accompaniment": "伴奏文件确认",
+    "transport": "交通集合确认",
+    "substitute": "替补人员到位确认",
+}
+
+
+def _category_display_name(category: str) -> str:
+    return CATEGORY_DISPLAY.get(category, category)
+
+
+def _check_item_to_dict(item: PrePerformanceCheckItem) -> dict:
+    return {
+        "id": item.id,
+        "checklist_id": item.checklist_id,
+        "song_id": item.song_id,
+        "song_name": item.song.name if item.song else "",
+        "category": item.category,
+        "item_name": item.item_name,
+        "responsible_member_id": item.responsible_member_id,
+        "responsible_member_name": item.responsible_member.name if item.responsible_member else None,
+        "position_id": item.position_id,
+        "deadline": item.deadline,
+        "status": item.status,
+        "abnormal_description": item.abnormal_description,
+        "photo_url": item.photo_url,
+        "completed_at": item.completed_at,
+        "created_at": item.created_at,
+        "updated_at": item.updated_at,
+    }
+
+
+def _check_item_abnormal_to_dict(item: PrePerformanceCheckItem) -> dict:
+    return {
+        "item_id": item.id,
+        "item_name": item.item_name,
+        "category": item.category,
+        "song_id": item.song_id,
+        "song_name": item.song.name if item.song else "",
+        "responsible_member_id": item.responsible_member_id,
+        "responsible_member_name": item.responsible_member.name if item.responsible_member else None,
+        "position_id": item.position_id,
+        "abnormal_description": item.abnormal_description,
+    }
+
+
+def _checklist_to_dict(checklist: PrePerformanceChecklist) -> dict:
+    return {
+        "id": checklist.id,
+        "performance_id": checklist.performance_id,
+        "created_at": checklist.created_at,
+        "items": [_check_item_to_dict(item) for item in checklist.items],
+    }
+
+
+def generate_checklist(db: Session, performance_id: int, data: dict) -> dict | None:
+    performance = db.query(PerformanceTask).filter(PerformanceTask.id == performance_id).first()
+    if not performance:
+        return None
+
+    existing = db.query(PrePerformanceChecklist).filter(
+        PrePerformanceChecklist.performance_id == performance_id
+    ).first()
+    if existing:
+        return None
+
+    checklist = PrePerformanceChecklist(performance_id=performance_id)
+    db.add(checklist)
+    db.flush()
+
+    custom_items = data.get("items") or []
+    if custom_items:
+        for ci in custom_items:
+            item = PrePerformanceCheckItem(
+                checklist_id=checklist.id,
+                song_id=ci["song_id"],
+                category=ci["category"],
+                item_name=ci["item_name"],
+                responsible_member_id=ci.get("responsible_member_id"),
+                position_id=ci.get("position_id"),
+                deadline=ci.get("deadline"),
+            )
+            db.add(item)
+    else:
+        song_tasks = (
+            db.query(PerformanceSongTask)
+            .filter(PerformanceSongTask.performance_id == performance_id)
+            .order_by(PerformanceSongTask.performance_order)
+            .all()
+        )
+        for st in song_tasks:
+            for cat, name in DEFAULT_CATEGORY_ITEMS.items():
+                item = PrePerformanceCheckItem(
+                    checklist_id=checklist.id,
+                    song_id=st.song_id,
+                    category=cat,
+                    item_name=name,
+                )
+                db.add(item)
+
+    db.commit()
+    db.refresh(checklist)
+    return _checklist_to_dict(checklist)
+
+
+def get_checklist_by_performance(db: Session, performance_id: int) -> dict | None:
+    checklist = (
+        db.query(PrePerformanceChecklist)
+        .filter(PrePerformanceChecklist.performance_id == performance_id)
+        .first()
+    )
+    if not checklist:
+        return None
+    return _checklist_to_dict(checklist)
+
+
+def get_checklist_summary(db: Session, performance_id: int) -> dict | None:
+    checklist = (
+        db.query(PrePerformanceChecklist)
+        .filter(PrePerformanceChecklist.performance_id == performance_id)
+        .first()
+    )
+    if not checklist:
+        return None
+
+    performance = db.query(PerformanceTask).filter(PerformanceTask.id == performance_id).first()
+    name = performance.name if performance else ""
+
+    items = checklist.items
+    total = len(items)
+    not_started = sum(1 for i in items if i.status == "not_started")
+    in_progress = sum(1 for i in items if i.status == "in_progress")
+    abnormal = sum(1 for i in items if i.status == "abnormal")
+    completed = sum(1 for i in items if i.status == "completed")
+    rate = round(completed / total, 2) if total > 0 else 0
+
+    return {
+        "performance_id": performance_id,
+        "performance_name": name,
+        "total_items": total,
+        "not_started_count": not_started,
+        "in_progress_count": in_progress,
+        "abnormal_count": abnormal,
+        "completed_count": completed,
+        "completion_rate": rate,
+    }
+
+
+def get_all_checklist_summaries(db: Session) -> list[dict]:
+    checklists = db.query(PrePerformanceChecklist).all()
+    result = []
+    for cl in checklists:
+        s = get_checklist_summary(db, cl.performance_id)
+        if s:
+            result.append(s)
+    return result
+
+
+def get_abnormal_items(db: Session, performance_id: int) -> list[dict]:
+    items = (
+        db.query(PrePerformanceCheckItem)
+        .join(PrePerformanceChecklist, PrePerformanceCheckItem.checklist_id == PrePerformanceChecklist.id)
+        .filter(
+            PrePerformanceChecklist.performance_id == performance_id,
+            PrePerformanceCheckItem.status == "abnormal",
+        )
+        .all()
+    )
+    return [_check_item_abnormal_to_dict(i) for i in items]
+
+
+def get_member_check_items(db: Session, performance_id: int, member_id: int) -> list[dict]:
+    items = (
+        db.query(PrePerformanceCheckItem)
+        .join(PrePerformanceChecklist, PrePerformanceCheckItem.checklist_id == PrePerformanceChecklist.id)
+        .filter(
+            PrePerformanceChecklist.performance_id == performance_id,
+            PrePerformanceCheckItem.responsible_member_id == member_id,
+        )
+        .all()
+    )
+    return [_check_item_to_dict(i) for i in items]
+
+
+def update_check_item(db: Session, item_id: int, data: dict) -> dict | None:
+    item = db.query(PrePerformanceCheckItem).filter(PrePerformanceCheckItem.id == item_id).first()
+    if not item:
+        return None
+
+    if "status" in data:
+        item.status = data["status"]
+        if data["status"] == "completed":
+            item.completed_at = datetime.now()
+        elif data["status"] != "completed":
+            item.completed_at = None
+
+    if "abnormal_description" in data:
+        item.abnormal_description = data["abnormal_description"]
+    if "photo_url" in data:
+        item.photo_url = data["photo_url"]
+
+    db.commit()
+    db.refresh(item)
+    return _check_item_to_dict(item)
+
+
+def add_check_item(db: Session, performance_id: int, data: dict) -> dict | None:
+    checklist = (
+        db.query(PrePerformanceChecklist)
+        .filter(PrePerformanceChecklist.performance_id == performance_id)
+        .first()
+    )
+    if not checklist:
+        return None
+
+    item = PrePerformanceCheckItem(
+        checklist_id=checklist.id,
+        song_id=data["song_id"],
+        category=data["category"],
+        item_name=data["item_name"],
+        responsible_member_id=data.get("responsible_member_id"),
+        position_id=data.get("position_id"),
+        deadline=data.get("deadline"),
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _check_item_to_dict(item)
+
+
+def delete_check_item(db: Session, item_id: int) -> bool:
+    item = db.query(PrePerformanceCheckItem).filter(PrePerformanceCheckItem.id == item_id).first()
+    if not item:
+        return False
+    db.delete(item)
+    db.commit()
+    return True
+
+
+def get_pre_check_stats(db: Session) -> list[dict]:
+    checklists = db.query(PrePerformanceChecklist).all()
+    result = []
+    for cl in checklists:
+        perf = db.query(PerformanceTask).filter(PerformanceTask.id == cl.performance_id).first()
+        if not perf:
+            continue
+        items = cl.items
+        total = len(items)
+        completed = sum(1 for i in items if i.status == "completed")
+        abnormal = sum(1 for i in items if i.status == "abnormal")
+        rate = round(completed / total, 2) if total > 0 else 0
+        result.append({
+            "performance_id": perf.id,
+            "performance_name": perf.name,
+            "performance_date": perf.start_time.strftime("%Y-%m-%d %H:%M") if perf.start_time else "",
+            "total_items": total,
+            "completed_count": completed,
+            "abnormal_count": abnormal,
+            "completion_rate": rate,
+        })
+    return result
+
+
+def get_member_completion_rank(db: Session) -> list[dict]:
+    items = (
+        db.query(PrePerformanceCheckItem)
+        .filter(PrePerformanceCheckItem.responsible_member_id.isnot(None))
+        .all()
+    )
+    from collections import defaultdict
+
+    member_stats = defaultdict(lambda: {"total": 0, "completed": 0, "abnormal": 0})
+    for it in items:
+        mid = it.responsible_member_id
+        member_stats[mid]["total"] += 1
+        if it.status == "completed":
+            member_stats[mid]["completed"] += 1
+        if it.status == "abnormal":
+            member_stats[mid]["abnormal"] += 1
+
+    result = []
+    for mid, stats in member_stats.items():
+        member = db.query(Member).filter(Member.id == mid).first()
+        name = member.name if member else ""
+        rate = round(stats["completed"] / stats["total"], 2) if stats["total"] > 0 else 0
+        result.append({
+            "member_id": mid,
+            "member_name": name,
+            "total_assigned": stats["total"],
+            "completed_count": stats["completed"],
+            "abnormal_count": stats["abnormal"],
+            "completion_rate": rate,
+        })
+
+    result.sort(key=lambda x: (-x["completion_rate"], -x["completed_count"]))
+    return result
+
+
+def get_frequent_abnormal_types(db: Session) -> list[dict]:
+    results = (
+        db.query(
+            PrePerformanceCheckItem.category,
+            func.count(PrePerformanceCheckItem.id),
+        )
+        .filter(PrePerformanceCheckItem.status == "abnormal")
+        .group_by(PrePerformanceCheckItem.category)
+        .all()
+    )
+    return [{"category": r[0], "count": r[1]} for r in results]
+
+
+def _perf_task_to_dict(task: PerformanceTask, include_confirmations: bool = False) -> dict:
+    song_tasks_data = []
+    for st in task.song_tasks:
+        song_tasks_data.append({
+            "id": st.id,
+            "song_id": st.song_id,
+            "song_name": st.song.name if st.song else "",
+            "formation_id": st.formation_id,
+            "formation_version": st.formation.version if st.formation else None,
+            "performance_order": st.performance_order,
+        })
+
+    total = len(task.confirmations)
+    confirmed = sum(1 for c in task.confirmations if c.status == "confirmed")
+    unconfirmed = sum(1 for c in task.confirmations if c.status == "unconfirmed")
+    leave = sum(1 for c in task.confirmations if c.status == "leave")
+
+    result = {
+        "id": task.id,
+        "name": task.name,
+        "location": task.location,
+        "meeting_time": task.meeting_time,
+        "start_time": task.start_time,
+        "costume_requirements": task.costume_requirements,
+        "notes": task.notes,
+        "created_at": task.created_at,
+        "song_tasks": song_tasks_data,
+        "total_members": total,
+        "confirmed_count": confirmed,
+        "unconfirmed_count": unconfirmed,
+        "leave_count": leave,
+    }
+
+    if include_confirmations:
+        confs = []
+        for c in task.confirmations:
+            confs.append({
+                "id": c.id,
+                "performance_id": c.performance_id,
+                "member_id": c.member_id,
+                "member_name": c.member.name if c.member else "",
+                "member_phone": c.member.phone if c.member else None,
+                "status": c.status,
+                "transport_mode": c.transport_mode,
+                "remark": c.remark,
+                "phone_reminded": c.phone_reminded or False,
+                "confirmed_at": c.confirmed_at,
+            })
+        result["confirmations"] = confs
+
+    return result
+
+
+def get_performance_task_list(db: Session) -> list[dict]:
+    tasks = db.query(PerformanceTask).order_by(PerformanceTask.start_time.desc()).all()
+    return [_perf_task_to_dict(t) for t in tasks]
+
+
+def create_performance_task(db: Session, data: dict) -> dict:
+    task = PerformanceTask(
+        name=data["name"],
+        location=data["location"],
+        meeting_time=data["meeting_time"],
+        start_time=data["start_time"],
+        costume_requirements=data.get("costume_requirements"),
+        notes=data.get("notes"),
+    )
+    db.add(task)
+    db.flush()
+
+    song_tasks = data.get("song_tasks") or []
+    for idx, st in enumerate(song_tasks):
+        perf_song = PerformanceSongTask(
+            performance_id=task.id,
+            song_id=st["song_id"],
+            formation_id=st.get("formation_id"),
+            performance_order=st.get("performance_order", idx),
+        )
+        db.add(perf_song)
+
+    member_ids = data.get("member_ids") or []
+    for mid in member_ids:
+        from models import PerformanceConfirmation
+        conf = PerformanceConfirmation(
+            performance_id=task.id,
+            member_id=mid,
+            status="unconfirmed",
+        )
+        db.add(conf)
+
+    db.commit()
+    db.refresh(task)
+    return _perf_task_to_dict(task)
+
+
+def get_performance_task_detail(db: Session, task_id: int) -> dict | None:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+    return _perf_task_to_dict(task, include_confirmations=True)
+
+
+def get_performance_task_with_song_details(db: Session, task_id: int) -> dict | None:
+    from models import FormationPosition, PerformanceConfirmation
+
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+
+    result = _perf_task_to_dict(task, include_confirmations=True)
+
+    song_details = []
+    for st in task.song_tasks:
+        total_positions = 0
+        leave_members_list = []
+        confirmed_subs = []
+        gap_positions_list = []
+
+        if st.formation_id:
+            positions = (
+                db.query(FormationPosition)
+                .filter(FormationPosition.formation_id == st.formation_id)
+                .all()
+            )
+            total_positions = len(positions)
+
+            filled_positions = {}
+            for p in positions:
+                if p.member_id:
+                    filled_positions[p.member_id] = p.id
+
+            leave_conf = (
+                db.query(PerformanceConfirmation)
+                .filter(
+                    PerformanceConfirmation.performance_id == task_id,
+                    PerformanceConfirmation.status == "leave",
+                )
+                .all()
+            )
+            for c in leave_conf:
+                if c.member_id in filled_positions:
+                    pos_id = filled_positions[c.member_id]
+                    leave_members_list.append({
+                        "member_id": c.member_id,
+                        "member_name": c.member.name if c.member else "",
+                        "position_id": pos_id,
+                    })
+                    gap_positions_list.append(pos_id)
+
+        song_details.append({
+            "song_id": st.song_id,
+            "song_name": st.song.name if st.song else "",
+            "formation_id": st.formation_id,
+            "formation_version": st.formation.version if st.formation else None,
+            "total_positions": total_positions,
+            "leave_members": leave_members_list,
+            "confirmed_substitutes": confirmed_subs,
+            "gap_positions": gap_positions_list,
+        })
+
+    result["song_details"] = song_details
+    return result
+
+
+def update_performance_task(db: Session, task_id: int, data: dict) -> dict | None:
+    from models import PerformanceConfirmation
+
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+
+    if "name" in data:
+        task.name = data["name"]
+    if "location" in data:
+        task.location = data["location"]
+    if "meeting_time" in data:
+        task.meeting_time = data["meeting_time"]
+    if "start_time" in data:
+        task.start_time = data["start_time"]
+    if "costume_requirements" in data:
+        task.costume_requirements = data["costume_requirements"]
+    if "notes" in data:
+        task.notes = data["notes"]
+
+    if "song_tasks" in data and data["song_tasks"] is not None:
+        for st in task.song_tasks:
+            db.delete(st)
+        db.flush()
+        for idx, st in enumerate(data["song_tasks"]):
+            perf_song = PerformanceSongTask(
+                performance_id=task.id,
+                song_id=st["song_id"],
+                formation_id=st.get("formation_id"),
+                performance_order=st.get("performance_order", idx),
+            )
+            db.add(perf_song)
+
+    if "member_ids" in data and data["member_ids"] is not None:
+        existing = {c.member_id: c for c in task.confirmations}
+        new_ids = set(data["member_ids"])
+        old_ids = set(existing.keys())
+
+        for old_id in old_ids - new_ids:
+            db.delete(existing[old_id])
+
+        for new_id in new_ids - old_ids:
+            conf = PerformanceConfirmation(
+                performance_id=task.id,
+                member_id=new_id,
+                status="unconfirmed",
+            )
+            db.add(conf)
+
+    db.commit()
+    db.refresh(task)
+    return _perf_task_to_dict(task)
+
+
+def delete_performance_task(db: Session, task_id: int) -> bool:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return False
+    db.delete(task)
+    db.commit()
+    return True
+
+
+def update_performance_confirmation(db: Session, task_id: int, member_id: int, data: dict) -> dict | None:
+    from models import PerformanceConfirmation
+
+    conf = (
+        db.query(PerformanceConfirmation)
+        .filter(
+            PerformanceConfirmation.performance_id == task_id,
+            PerformanceConfirmation.member_id == member_id,
+        )
+        .first()
+    )
+    if not conf:
+        return None
+
+    if "status" in data:
+        conf.status = data["status"]
+        if data["status"] == "confirmed":
+            conf.confirmed_at = datetime.now()
+    if "transport_mode" in data:
+        conf.transport_mode = data["transport_mode"]
+    if "remark" in data:
+        conf.remark = data["remark"]
+    if "phone_reminded" in data:
+        conf.phone_reminded = data["phone_reminded"]
+
+    db.commit()
+    db.refresh(conf)
+    return {
+        "id": conf.id,
+        "performance_id": conf.performance_id,
+        "member_id": conf.member_id,
+        "member_name": conf.member.name if conf.member else "",
+        "member_phone": conf.member.phone if conf.member else None,
+        "status": conf.status,
+        "transport_mode": conf.transport_mode,
+        "remark": conf.remark,
+        "phone_reminded": conf.phone_reminded or False,
+        "confirmed_at": conf.confirmed_at,
+    }
+
+
+def mark_phone_reminded(db: Session, task_id: int, member_id: int) -> dict | None:
+    return update_performance_confirmation(db, task_id, member_id, {"phone_reminded": True})
+
+
+def get_performance_confirmation_stats(db: Session) -> list[dict]:
+    from models import PerformanceConfirmation
+
+    tasks = db.query(PerformanceTask).order_by(PerformanceTask.start_time.desc()).all()
+    result = []
+    for task in tasks:
+        total = len(task.confirmations)
+        confirmed = sum(1 for c in task.confirmations if c.status == "confirmed")
+        unconfirmed = sum(1 for c in task.confirmations if c.status == "unconfirmed")
+        leave = sum(1 for c in task.confirmations if c.status == "leave")
+        reminded = sum(1 for c in task.confirmations if c.phone_reminded)
+
+        conf_rate = round(confirmed / total, 2) if total > 0 else 0
+        remind_rate = round(reminded / total, 2) if total > 0 else 0
+
+        result.append({
+            "performance_id": task.id,
+            "performance_name": task.name,
+            "performance_date": task.start_time.strftime("%Y-%m-%d %H:%M") if task.start_time else "",
+            "total_members": total,
+            "confirmed_count": confirmed,
+            "unconfirmed_count": unconfirmed,
+            "leave_count": leave,
+            "confirmation_rate": conf_rate,
+            "phone_reminded_count": reminded,
+            "phone_reminder_rate": remind_rate,
+        })
+    return result
