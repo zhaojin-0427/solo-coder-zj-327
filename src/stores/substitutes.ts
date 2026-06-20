@@ -46,13 +46,16 @@ export const useSubstitutesStore = defineStore('substitutes', () => {
     }
   }
 
-  async function fetchRecommendations(songId: number, absentMemberId: number) {
+  async function fetchRecommendations(songId: number, absentMemberId: number): Promise<SubstituteRecommend[]> {
     loading.value = true
     try {
-      recommendations.value = await api.substitutes.recommend(songId, absentMemberId)
+      const data = await api.substitutes.recommend(songId, absentMemberId)
+      recommendations.value = data
+      return data
     } catch (e) {
       console.error('Failed to fetch recommendations', e)
       recommendations.value = []
+      return []
     } finally {
       loading.value = false
     }

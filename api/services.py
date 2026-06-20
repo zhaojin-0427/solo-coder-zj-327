@@ -245,10 +245,27 @@ def lock_formation(db: Session, formation_id: int) -> Formation:
 
 
 def recommend_substitutes(db: Session, song_id: int, absent_member_id: int) -> list[dict]:
-    absent_positions = db.query(FormationPosition).filter(
-        FormationPosition.member_id == absent_member_id
-    ).all()
-    absent_position_ids = [p.position_id for p in absent_positions]
+    latest_formation = (
+        db.query(Formation)
+        .filter(Formation.song_id == song_id)
+        .order_by(Formation.version.desc())
+        .first()
+    )
+
+    absent_position_ids = []
+    if latest_formation:
+        absent_positions = (
+            db.query(FormationPosition)
+            .filter(
+                FormationPosition.formation_id == latest_formation.id,
+                FormationPosition.member_id == absent_member_id,
+            )
+            .all()
+        )
+        absent_position_ids = [p.position_id for p in absent_positions]
+
+    absent_member = db.query(Member).filter(Member.id == absent_member_id).first()
+    absent_height = absent_member.height_range if absent_member else "medium"
 
     absent_member_songs = db.query(MemberSong).filter(MemberSong.member_id == absent_member_id).all()
     absent_song_ids = {ms.song_id for ms in absent_member_songs}
@@ -256,27 +273,52 @@ def recommend_substitutes(db: Session, song_id: int, absent_member_id: int) -> l
     all_member_songs = db.query(MemberSong).filter(MemberSong.song_id == song_id).all()
     eligible_member_ids = {ms.member_id for ms in all_member_songs} - {absent_member_id}
 
+    attendance_records = (
+        db.query(Attendance)
+        .filter(Attendance.song_id == song_id)
+        .order_by(Attendance.date.desc())
+        .all()
+    )
+    latest_attendance = {}
+    for rec in attendance_records:
+        if rec.member_id not in latest_attendance:
+            latest_attendance[rec.member_id] = rec.status
+
+    present_member_ids = {
+        mid for mid in eligible_member_ids
+        if latest_attendance.get(mid, "present") == "present"
+    }
+
     results = []
-    for mid in eligible_member_ids:
+    for mid in present_member_ids:
         member = db.query(Member).filter(Member.id == mid).first()
         if not member:
             continue
-        sub_positions = db.query(MemberSubstitutePosition).filter(
-            MemberSubstitutePosition.member_id == mid
-        ).all()
+
+        sub_positions = (
+            db.query(MemberSubstitutePosition)
+            .filter(MemberSubstitutePosition.member_id == mid)
+            .all()
+        )
         sub_labels = {sp.position_label for sp in sub_positions}
         matched = [pid for pid in absent_position_ids if pid in sub_labels]
 
-        member_song_ids = {ms.song_id for ms in db.query(MemberSong).filter(MemberSong.member_id == mid).all()}
+        member_song_ids = {
+            ms.song_id
+            for ms in db.query(MemberSong).filter(MemberSong.member_id == mid).all()
+        }
         common_songs = len(absent_song_ids & member_song_ids)
 
-        if matched or common_songs > 0:
-            results.append({
-                "member_id": mid,
-                "name": member.name,
-                "matched_positions": matched if matched else [],
-                "priority": len(matched) + common_songs,
-            })
+        height_match = 1 if member.height_range == absent_height else 0
+
+        priority = len(matched) * 3 + common_songs * 2 + height_match
+
+        results.append({
+            "member_id": mid,
+            "name": member.name,
+            "matched_positions": matched if matched else [],
+            "priority": priority,
+        })
 
     results.sort(key=lambda r: -r["priority"])
     return results

@@ -6,7 +6,7 @@
         <label class="text-base font-medium text-[#1F2937]">选择曲目：</label>
         <select
           v-model="selectedSongId"
-          class="px-4 py-2 border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E53935"
+          class="px-4 py-2 border border-[#E5E7EB] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#E53935]"
         >
           <option :value="null">请选择</option>
           <option v-for="song in songsStore.songs" :key="song.id" :value="song.id">
@@ -26,12 +26,15 @@
         <div class="p-4 border-b border-[#E5E7EB] flex items-center justify-between">
           <h3 class="text-base font-semibold text-[#1F2937]">出勤面板</h3>
           <span class="text-xs text-[#9CA3AF]">
-            {{ presentCount }}/{{ membersStore.members.length }} 到场
+            {{ presentCount }}/{{ memberCount }} 到场
           </span>
         </div>
-        <div class="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
+        <div v-if="loadingAttendance" class="flex-1 flex items-center justify-center">
+          <p class="text-sm text-[#9CA3AF]">加载中...</p>
+        </div>
+        <div v-else class="flex-1 overflow-y-auto p-3 space-y-2 scrollbar-thin">
           <div
-            v-for="member in membersStore.members"
+            v-for="member in songMembers"
             :key="member.id"
             class="flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50"
             :class="isAbsent(member.id) ? 'bg-red-50' : ''"
@@ -43,7 +46,7 @@
               >
                 {{ member.name.charAt(0) }}
               </div>
-              <span class="text-base text-[#1F2937">{{ member.name }}</span>
+              <span class="text-base text-[#1F2937]">{{ member.name }}</span>
             </div>
             <button
               class="px-3 py-1 rounded-full text-sm font-medium transition-colors shrink-0"
@@ -56,6 +59,9 @@
             >
               {{ isPresent(member.id) ? '到场' : '请假' }}
             </button>
+          </div>
+          <div v-if="!songMembers.length" class="text-center py-8 text-sm text-[#9CA3AF]">
+            暂无成员
           </div>
         </div>
       </div>
@@ -126,33 +132,41 @@
       </div>
 
       <div class="w-72 bg-white rounded-xl border border-[#E5E7EB] flex flex-col shrink-0">
-        <div class="p-4 border-b border-[#E5E7EB]">
+        <div class="p-4 border-b border-[#E5E7EB] flex items-center justify-between">
           <h3 class="text-base font-semibold text-[#1F2937]">替补推荐</h3>
+          <span class="text-xs text-[#9CA3AF]">{{ absentMemberIds.length }} 人请假</span>
         </div>
         <div class="flex-1 overflow-y-auto p-3 space-y-3 scrollbar-thin">
-          <div v-if="!absentMemberIds.length" class="text-center py-8 text-sm text-[#9CA3AF]">
-            暂无请假成员
+          <div v-if="loadingRecommendations" class="text-center py-8 text-sm text-[#9CA3AF]">
+            加载推荐中...
           </div>
-          <template v-for="absentId in absentMemberIds" :key="absentId">
-            <div class="mb-2">
-              <p class="text-sm font-medium text-[#E53935] mb-2">
-                {{ getMemberName(absentId) }} 请假
-              </p>
-              <div v-if="substitutesStore.loading" class="text-sm text-[#9CA3AF]">查找推荐中...</div>
-              <template v-else>
-                <SubstituteRecommendCard
-                  v-for="rec in getRecommendations(absentId)"
-                  :key="rec.member_id"
-                  :member-id="rec.member_id"
-                  :priority="rec.priority"
-                  :confirmed="isSubConfirmed(absentId, rec.member_id)"
-                  @confirm="confirmSub(absentId, rec.member_id)"
-                />
-                <p v-if="!getRecommendations(absentId).length" class="text-sm text-[#9CA3AF]">
-                  暂无推荐
-                </p>
-              </template>
+          <template v-else>
+            <div v-if="!absentMemberIds.length" class="text-center py-8 text-sm text-[#9CA3AF]">
+              暂无请假成员
             </div>
+            <template v-for="absentId in absentMemberIds" :key="absentId">
+              <div class="mb-2">
+                <p class="text-sm font-medium text-[#E53935] mb-2">
+                  {{ getMemberName(absentId) }} 请假
+                </p>
+                <div v-if="isLoadingRec(absentId)" class="text-sm text-[#9CA3AF] py-2">
+                  查找推荐中...
+                </div>
+                <template v-else>
+                  <SubstituteRecommendCard
+                    v-for="rec in getRecommendations(absentId)"
+                    :key="rec.member_id"
+                    :member-id="rec.member_id"
+                    :priority="rec.priority"
+                    :confirmed="isSubConfirmed(absentId, rec.member_id)"
+                    @confirm="confirmSub(absentId, rec.member_id)"
+                  />
+                  <p v-if="!getRecommendations(absentId).length" class="text-sm text-[#9CA3AF] py-2">
+                    暂无可用替补
+                  </p>
+                </template>
+              </div>
+            </template>
           </template>
         </div>
       </div>
@@ -176,12 +190,22 @@ const formationsStore = useFormationsStore()
 const substitutesStore = useSubstitutesStore()
 
 const selectedSongId = ref<number | null>(null)
+const loadingAttendance = ref(false)
+const loadingRecommendations = ref(false)
+const loadingRecMap = ref<Set<number>>(new Set())
 
 const recommendationsMap = ref<Map<number, SubstituteRecommend[]>>(new Map())
 
 const currentFormation = computed(() => {
   return formationsStore.currentFormation
 })
+
+const songMembers = computed(() => {
+  if (!selectedSongId.value) return []
+  return membersStore.members.filter((m) => m.song_ids.includes(selectedSongId.value!))
+})
+
+const memberCount = computed(() => songMembers.value.length)
 
 const attendanceMap = computed(() => {
   const m = new Map<number, 'present' | 'absent'>()
@@ -207,13 +231,13 @@ function isAbsent(memberId: number | null) {
 }
 
 const absentMemberIds = computed(() =>
-  membersStore.members
+  songMembers.value
     .map((m) => m.id)
     .filter((id) => isAbsent(id))
 )
 
 const presentCount = computed(() =>
-  membersStore.members
+  songMembers.value
     .map((m) => m.id)
     .filter((id) => isPresent(id)).length
 )
@@ -224,6 +248,10 @@ function getSubForMember(memberId: number) {
 
 function getRecommendations(absentId: number) {
   return recommendationsMap.value.get(absentId) || []
+}
+
+function isLoadingRec(absentId: number) {
+  return loadingRecMap.value.has(absentId)
 }
 
 function isSubConfirmed(absentId: number, subId: number) {
@@ -251,6 +279,25 @@ function getHeightBg(memberId: number) {
   return member ? heightColorMap[member.height_range] : 'bg-gray-500'
 }
 
+async function loadRecommendationsForAbsent(absentIds: number[]) {
+  if (!selectedSongId.value) return
+  loadingRecommendations.value = true
+  const promises = absentIds.map(async (absentId) => {
+    loadingRecMap.value.add(absentId)
+    try {
+      const recs = await substitutesStore.fetchRecommendations(selectedSongId.value!, absentId)
+      recommendationsMap.value.set(absentId, substitutesStore.recommendations)
+    } finally {
+      loadingRecMap.value.delete(absentId)
+    }
+  })
+  try {
+    await Promise.all(promises)
+  } finally {
+    loadingRecommendations.value = false
+  }
+}
+
 async function toggleAttendance(memberId: number) {
   if (!selectedSongId.value) return
   const newStatus: 'present' | 'absent' = isPresent(memberId) ? 'absent' : 'present'
@@ -262,8 +309,13 @@ async function toggleAttendance(memberId: number) {
       date: new Date().toISOString().slice(0, 10),
     })
     if (newStatus === 'absent') {
-      await substitutesStore.fetchRecommendations(selectedSongId.value, memberId)
-      recommendationsMap.value.set(memberId, substitutesStore.recommendations)
+      loadingRecMap.value.add(memberId)
+      try {
+        await substitutesStore.fetchRecommendations(selectedSongId.value, memberId)
+        recommendationsMap.value.set(memberId, substitutesStore.recommendations)
+      } finally {
+        loadingRecMap.value.delete(memberId)
+      }
     } else {
       recommendationsMap.value.delete(memberId)
     }
@@ -301,12 +353,24 @@ async function handleLock() {
 
 watch(selectedSongId, async (id) => {
   if (id) {
-    await Promise.all([
-      formationsStore.fetchFormation(id),
-      substitutesStore.fetchAttendance(id),
-      substitutesStore.fetchSubstitutes(id),
-    ])
+    loadingAttendance.value = true
     recommendationsMap.value.clear()
+    loadingRecMap.value.clear()
+    try {
+      await Promise.all([
+        formationsStore.fetchFormation(id),
+        substitutesStore.fetchAttendance(id),
+        substitutesStore.fetchSubstitutes(id),
+      ])
+    } finally {
+      loadingAttendance.value = false
+    }
+    const absentIds = songMembers.value
+      .map((m) => m.id)
+      .filter((mid) => isAbsent(mid))
+    if (absentIds.length > 0) {
+      await loadRecommendationsForAbsent(absentIds)
+    }
   }
 })
 
