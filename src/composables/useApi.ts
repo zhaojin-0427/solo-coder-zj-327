@@ -16,6 +16,12 @@ import type {
   SubstituteRateItem,
   ErrorPositionItem,
   AttendanceStatItem,
+  PerformanceTask,
+  PerformanceTaskDetail,
+  PerformanceTaskWithSongDetails,
+  PerformanceConfirmation,
+  PerformanceSongTaskCreate,
+  PerformanceConfirmationStatItem,
 } from '@/types'
 
 const api = axios.create({
@@ -86,6 +92,47 @@ export function useApi() {
       substituteRates: () => api.get<SubstituteRateItem[]>('/statistics/substitute-rates').then((r) => r.data),
       errorPositions: () => api.get<ErrorPositionItem[]>('/statistics/error-positions').then((r) => r.data),
       attendance: () => api.get<AttendanceStatItem[]>('/statistics/attendance').then((r) => r.data),
+      performanceConfirmations: () =>
+        api.get<PerformanceConfirmationStatItem[]>('/statistics/performance-confirmations').then((r) => r.data),
+    },
+    performances: {
+      list: () => api.get<PerformanceTask[]>('/performances').then((r) => r.data),
+      get: (id: number) => api.get<PerformanceTaskDetail>(`/performances/${id}`).then((r) => r.data),
+      getWithSongDetails: (id: number) =>
+        api.get<PerformanceTaskWithSongDetails>(`/performances/${id}/details`).then((r) => r.data),
+      create: (data: {
+        name: string
+        location: string
+        meeting_time: string
+        start_time: string
+        costume_requirements?: string | null
+        notes?: string | null
+        song_tasks?: PerformanceSongTaskCreate[]
+        member_ids?: number[]
+      }) => api.post<PerformanceTask>('/performances', data).then((r) => r.data),
+      update: (
+        id: number,
+        data: {
+          name?: string
+          location?: string
+          meeting_time?: string
+          start_time?: string
+          costume_requirements?: string | null
+          notes?: string | null
+          song_tasks?: PerformanceSongTaskCreate[]
+          member_ids?: number[]
+        }
+      ) => api.put<PerformanceTask>(`/performances/${id}`, data).then((r) => r.data),
+      delete: (id: number) => api.delete(`/performances/${id}`).then((r) => r.data),
+      updateConfirmation: (taskId: number, memberId: number, data: {
+        status?: string
+        transport_mode?: string | null
+        remark?: string | null
+        phone_reminded?: boolean
+      }) =>
+        api.put<PerformanceConfirmation>(`/performances/${taskId}/confirmations/${memberId}`, data).then((r) => r.data),
+      markPhoneReminded: (taskId: number, memberId: number) =>
+        api.post<PerformanceConfirmation>(`/performances/${taskId}/confirmations/${memberId}/phone-reminded`).then((r) => r.data),
     },
   }
 }

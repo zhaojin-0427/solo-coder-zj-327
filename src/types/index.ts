@@ -2,6 +2,7 @@ export type FormationType = 'line' | 'triangle' | 'square' | 'circle' | 'double_
 export type HeightRange = 'short' | 'medium' | 'tall'
 export type AttendanceStatus = 'present' | 'absent'
 export type ErrorType = 'beat_error' | 'position_error'
+export type PerformanceConfirmationStatus = 'unconfirmed' | 'confirmed' | 'leave'
 
 export interface Song {
   id: number
@@ -128,6 +129,94 @@ export interface AttendanceStatItem {
   attendance_rate: number
 }
 
+export interface PerformanceSongTask {
+  id: number
+  song_id: number
+  song_name: string
+  formation_id: number | null
+  formation_version: number | null
+  performance_order: number
+}
+
+export interface PerformanceSongTaskCreate {
+  song_id: number
+  formation_id?: number | null
+  performance_order?: number
+}
+
+export interface PerformanceTask {
+  id: number
+  name: string
+  location: string
+  meeting_time: string
+  start_time: string
+  costume_requirements: string | null
+  notes: string | null
+  created_at: string
+  song_tasks: PerformanceSongTask[]
+  total_members: number
+  confirmed_count: number
+  unconfirmed_count: number
+  leave_count: number
+}
+
+export interface PerformanceConfirmation {
+  id: number
+  performance_id: number
+  member_id: number
+  member_name: string
+  member_phone: string | null
+  status: PerformanceConfirmationStatus
+  transport_mode: string | null
+  remark: string | null
+  phone_reminded: boolean
+  confirmed_at: string | null
+}
+
+export interface PerformanceTaskDetail extends PerformanceTask {
+  confirmations: PerformanceConfirmation[]
+}
+
+export interface LeaveMemberItem {
+  position_id: string
+  member_id: number
+  member_name: string
+}
+
+export interface ConfirmedSubstituteItem {
+  position_id: string
+  substitute_member_id: number
+  substitute_member_name: string
+}
+
+export interface SongPerformanceDetail {
+  song_id: number
+  song_name: string
+  formation_id: number | null
+  formation_version: number | null
+  total_positions: number
+  leave_members: LeaveMemberItem[]
+  confirmed_substitutes: ConfirmedSubstituteItem[]
+  gap_positions: string[]
+}
+
+export interface PerformanceTaskWithSongDetails extends PerformanceTaskDetail {
+  song_details: SongPerformanceDetail[]
+}
+
+export interface PerformanceConfirmationStatItem {
+  performance_id: number
+  performance_name: string
+  performance_date: string
+  total_members: number
+  confirmed_count: number
+  unconfirmed_count: number
+  leave_count: number
+  confirmation_rate: number
+  phone_reminded_count: number
+  phone_reminder_rate: number
+}
+
 export const FORMATION_TYPE_MAP: Record<FormationType, string> = {
   line: '一字排',
   triangle: '三角阵',
@@ -141,4 +230,16 @@ export const HEIGHT_RANGE_MAP: Record<HeightRange, string> = {
   short: '娇小(＜160cm)',
   medium: '中等(160-168cm)',
   tall: '高挑(＞168cm)',
+}
+
+export const CONFIRMATION_STATUS_MAP: Record<PerformanceConfirmationStatus, string> = {
+  unconfirmed: '未确认',
+  confirmed: '已确认',
+  leave: '请假',
+}
+
+export const CONFIRMATION_STATUS_COLOR_MAP: Record<PerformanceConfirmationStatus, string> = {
+  unconfirmed: 'bg-yellow-100 text-yellow-700',
+  confirmed: 'bg-green-100 text-green-700',
+  leave: 'bg-red-100 text-red-700',
 }

@@ -161,3 +161,58 @@ class SubstituteAssignment(Base):
     song = relationship("Song", back_populates="substitute_assignments")
     absent_member = relationship("Member", foreign_keys=[absent_member_id])
     substitute_member = relationship("Member", foreign_keys=[substitute_member_id])
+
+
+class PerformanceTask(Base):
+    __tablename__ = "performance_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False)
+    location = Column(String(200), nullable=False)
+    meeting_time = Column(DateTime, nullable=False)
+    start_time = Column(DateTime, nullable=False)
+    costume_requirements = Column(Text)
+    notes = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    song_tasks = relationship("PerformanceSongTask", back_populates="performance", cascade="all, delete-orphan")
+    confirmations = relationship("PerformanceConfirmation", back_populates="performance", cascade="all, delete-orphan")
+
+
+class PerformanceSongTask(Base):
+    __tablename__ = "performance_song_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    performance_id = Column(Integer, ForeignKey("performance_tasks.id", ondelete="CASCADE"), nullable=False)
+    song_id = Column(Integer, ForeignKey("songs.id", ondelete="CASCADE"), nullable=False)
+    formation_id = Column(Integer, ForeignKey("formations.id", ondelete="SET NULL"), nullable=True)
+    performance_order = Column(Integer, nullable=False, default=0)
+
+    performance = relationship("PerformanceTask", back_populates="song_tasks")
+    song = relationship("Song")
+    formation = relationship("Formation")
+
+    __table_args__ = (
+        UniqueConstraint("performance_id", "song_id", name="uq_performance_song"),
+    )
+
+
+class PerformanceConfirmation(Base):
+    __tablename__ = "performance_confirmations"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    performance_id = Column(Integer, ForeignKey("performance_tasks.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(20), nullable=False, default="unconfirmed")
+    transport_mode = Column(String(50))
+    remark = Column(Text)
+    phone_reminded = Column(Boolean, nullable=False, default=False)
+    confirmed_at = Column(DateTime, nullable=True)
+
+    performance = relationship("PerformanceTask", back_populates="confirmations")
+    member = relationship("Member")
+
+    __table_args__ = (
+        CheckConstraint("status IN ('unconfirmed', 'confirmed', 'leave')", name="ck_perf_conf_status"),
+        UniqueConstraint("performance_id", "member_id", name="uq_perf_member_conf"),
+    )

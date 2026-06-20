@@ -4,6 +4,7 @@ from database import get_db
 from schemas import (
     OverviewResponse, RehearsalCountItem,
     SubstituteRateItem, ErrorPositionItem, AttendanceItem,
+    PerformanceConfirmationStatItem,
 )
 import services
 
@@ -33,3 +34,8 @@ def get_error_positions(db: Session = Depends(get_db)):
 @router.get("/attendance", response_model=list[AttendanceItem])
 def get_attendance_stats(db: Session = Depends(get_db)):
     return services.get_attendance_stats(db)
+
+
+@router.get("/performance-confirmations", response_model=list[PerformanceConfirmationStatItem])
+def get_performance_confirmation_stats(db: Session = Depends(get_db)):
+    return services.get_performance_confirmation_stats(db)

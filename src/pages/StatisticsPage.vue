@@ -56,6 +56,65 @@
           <div v-if="!attendanceList.length" class="text-center text-sm text-[#9CA3AF] py-4">暂无数据</div>
         </div>
       </div>
+
+      <div class="card xl:col-span-2">
+        <h3 class="text-lg font-semibold text-[#1F2937] mb-4">演出确认统计</h3>
+        <div v-if="!statisticsStore.performanceConfirmations.length" class="text-center py-8 text-[#9CA3AF]">
+          暂无演出数据
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="text-left text-[#6B7280] border-b border-[#E5E7EB]">
+                <th class="pb-3 font-medium">演出名称</th>
+                <th class="pb-3 font-medium">演出日期</th>
+                <th class="pb-3 font-medium text-center">总人数</th>
+                <th class="pb-3 font-medium text-center">已确认</th>
+                <th class="pb-3 font-medium text-center">未确认</th>
+                <th class="pb-3 font-medium text-center">请假</th>
+                <th class="pb-3 font-medium">确认率</th>
+                <th class="pb-3 font-medium">电话提醒率</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-[#F3F4F6]">
+              <tr v-for="item in statisticsStore.performanceConfirmations" :key="item.performance_id">
+                <td class="py-3 text-[#1F2937] font-medium">{{ item.performance_name }}</td>
+                <td class="py-3 text-[#6B7280]">{{ item.performance_date }}</td>
+                <td class="py-3 text-center text-[#1F2937]">{{ item.total_members }}</td>
+                <td class="py-3 text-center text-green-600 font-medium">{{ item.confirmed_count }}</td>
+                <td class="py-3 text-center text-yellow-600 font-medium">{{ item.unconfirmed_count }}</td>
+                <td class="py-3 text-center text-red-600 font-medium">{{ item.leave_count }}</td>
+                <td class="py-3">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-gray-100 rounded-full h-2.5 max-w-[100px] overflow-hidden">
+                      <div
+                        class="h-full bg-green-500 rounded-full"
+                        :style="{ width: item.confirmation_rate * 100 + '%' }"
+                      ></div>
+                    </div>
+                    <span class="text-xs font-medium text-[#1F2937] w-10">
+                      {{ (item.confirmation_rate * 100).toFixed(0) }}%
+                    </span>
+                  </div>
+                </td>
+                <td class="py-3">
+                  <div class="flex items-center gap-2">
+                    <div class="flex-1 bg-gray-100 rounded-full h-2.5 max-w-[100px] overflow-hidden">
+                      <div
+                        class="h-full bg-blue-500 rounded-full"
+                        :style="{ width: item.phone_reminder_rate * 100 + '%' }"
+                      ></div>
+                    </div>
+                    <span class="text-xs font-medium text-[#1F2937] w-10">
+                      {{ (item.phone_reminder_rate * 100).toFixed(0) }}%
+                    </span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 </template>

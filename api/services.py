@@ -5,6 +5,7 @@ from models import (
     Song, Member, MemberSong, MemberSubstitutePosition,
     Formation, FormationPosition, Rehearsal, RehearsalError,
     Attendance, SubstituteAssignment,
+    PerformanceTask, PerformanceSongTask, PerformanceConfirmation,
 )
 from schemas import (
     FormationPositionUpdate,
@@ -412,3 +413,336 @@ def get_attendance_stats(db: Session) -> list[dict]:
             "attendance_rate": rate,
         })
     return items
+
+
+def create_performance_task(db: Session, data: dict) -> dict:
+    task = PerformanceTask(
+        name=data["name"],
+        location=data["location"],
+        meeting_time=data["meeting_time"],
+        start_time=data["start_time"],
+        costume_requirements=data.get("costume_requirements"),
+        notes=data.get("notes"),
+    )
+    db.add(task)
+    db.flush()
+
+    song_tasks_data = data.get("song_tasks", [])
+    for st in song_tasks_data:
+        song_task = PerformanceSongTask(
+            performance_id=task.id,
+            song_id=st["song_id"],
+            formation_id=st.get("formation_id"),
+            performance_order=st.get("performance_order", 0),
+        )
+        db.add(song_task)
+
+    member_ids = data.get("member_ids", [])
+    for mid in member_ids:
+        conf = PerformanceConfirmation(
+            performance_id=task.id,
+            member_id=mid,
+            status="unconfirmed",
+            phone_reminded=False,
+        )
+        db.add(conf)
+
+    db.commit()
+    db.refresh(task)
+    return _performance_task_to_dict(db, task)
+
+
+def update_performance_task(db: Session, task_id: int, data: dict) -> dict:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+
+    if "name" in data and data["name"] is not None:
+        task.name = data["name"]
+    if "location" in data and data["location"] is not None:
+        task.location = data["location"]
+    if "meeting_time" in data and data["meeting_time"] is not None:
+        task.meeting_time = data["meeting_time"]
+    if "start_time" in data and data["start_time"] is not None:
+        task.start_time = data["start_time"]
+    if "costume_requirements" in data and data["costume_requirements"] is not None:
+        task.costume_requirements = data["costume_requirements"]
+    if "notes" in data and data["notes"] is not None:
+        task.notes = data["notes"]
+
+    if "song_tasks" in data and data["song_tasks"] is not None:
+        db.query(PerformanceSongTask).filter(PerformanceSongTask.performance_id == task_id).delete()
+        for st in data["song_tasks"]:
+            song_task = PerformanceSongTask(
+                performance_id=task.id,
+                song_id=st["song_id"],
+                formation_id=st.get("formation_id"),
+                performance_order=st.get("performance_order", 0),
+            )
+            db.add(song_task)
+
+    if "member_ids" in data and data["member_ids"] is not None:
+        existing_confs = db.query(PerformanceConfirmation).filter(
+            PerformanceConfirmation.performance_id == task_id
+        ).all()
+        existing_member_ids = {c.member_id for c in existing_confs}
+        new_member_ids = set(data["member_ids"])
+
+        for mid in existing_member_ids - new_member_ids:
+            db.query(PerformanceConfirmation).filter(
+                PerformanceConfirmation.performance_id == task_id,
+                PerformanceConfirmation.member_id == mid,
+            ).delete()
+
+        for mid in new_member_ids - existing_member_ids:
+            conf = PerformanceConfirmation(
+                performance_id=task.id,
+                member_id=mid,
+                status="unconfirmed",
+                phone_reminded=False,
+            )
+            db.add(conf)
+
+    db.commit()
+    db.refresh(task)
+    return _performance_task_to_dict(db, task)
+
+
+def delete_performance_task(db: Session, task_id: int) -> bool:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return False
+    db.delete(task)
+    db.commit()
+    return True
+
+
+def get_performance_task_list(db: Session) -> list[dict]:
+    tasks = db.query(PerformanceTask).order_by(PerformanceTask.start_time.desc()).all()
+    return [_performance_task_to_dict(db, t) for t in tasks]
+
+
+def get_performance_task_detail(db: Session, task_id: int) -> dict:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+    result = _performance_task_to_dict(db, task)
+    result["confirmations"] = _get_confirmations_for_performance(db, task_id)
+    return result
+
+
+def get_performance_task_with_song_details(db: Session, task_id: int) -> dict:
+    task = db.query(PerformanceTask).filter(PerformanceTask.id == task_id).first()
+    if not task:
+        return None
+    result = _performance_task_to_dict(db, task)
+    result["song_details"] = _get_song_performance_details(db, task_id)
+    result["confirmations"] = _get_confirmations_for_performance(db, task_id)
+    return result
+
+
+def update_performance_confirmation(db: Session, task_id: int, member_id: int, data: dict) -> dict:
+    conf = db.query(PerformanceConfirmation).filter(
+        PerformanceConfirmation.performance_id == task_id,
+        PerformanceConfirmation.member_id == member_id,
+    ).first()
+    if not conf:
+        return None
+
+    if "status" in data and data["status"] is not None:
+        conf.status = data["status"]
+        if data["status"] in ("confirmed", "leave"):
+            from datetime import datetime
+            conf.confirmed_at = datetime.now()
+    if "transport_mode" in data and data["transport_mode"] is not None:
+        conf.transport_mode = data["transport_mode"]
+    if "remark" in data and data["remark"] is not None:
+        conf.remark = data["remark"]
+    if "phone_reminded" in data and data["phone_reminded"] is not None:
+        conf.phone_reminded = data["phone_reminded"]
+
+    db.commit()
+    db.refresh(conf)
+    return _confirmation_to_dict(db, conf)
+
+
+def mark_phone_reminded(db: Session, task_id: int, member_id: int) -> dict:
+    return update_performance_confirmation(db, task_id, member_id, {"phone_reminded": True})
+
+
+def get_performance_confirmation_stats(db: Session) -> list[dict]:
+    tasks = db.query(PerformanceTask).order_by(PerformanceTask.start_time.desc()).all()
+    results = []
+    for task in tasks:
+        confs = db.query(PerformanceConfirmation).filter(
+            PerformanceConfirmation.performance_id == task.id
+        ).all()
+        total = len(confs)
+        confirmed = sum(1 for c in confs if c.status == "confirmed")
+        unconfirmed = sum(1 for c in confs if c.status == "unconfirmed")
+        leave = sum(1 for c in confs if c.status == "leave")
+        phone_reminded = sum(1 for c in confs if c.phone_reminded)
+
+        results.append({
+            "performance_id": task.id,
+            "performance_name": task.name,
+            "performance_date": task.start_time.strftime("%Y-%m-%d"),
+            "total_members": total,
+            "confirmed_count": confirmed,
+            "unconfirmed_count": unconfirmed,
+            "leave_count": leave,
+            "confirmation_rate": round(confirmed / total, 2) if total > 0 else 0,
+            "phone_reminded_count": phone_reminded,
+            "phone_reminder_rate": round(phone_reminded / total, 2) if total > 0 else 0,
+        })
+    return results
+
+
+def _performance_task_to_dict(db: Session, task: PerformanceTask) -> dict:
+    song_tasks = sorted(task.song_tasks, key=lambda st: st.performance_order)
+    song_task_dicts = []
+    for st in song_tasks:
+        song = db.query(Song).filter(Song.id == st.song_id).first()
+        formation = db.query(Formation).filter(Formation.id == st.formation_id).first() if st.formation_id else None
+        song_task_dicts.append({
+            "id": st.id,
+            "song_id": st.song_id,
+            "song_name": song.name if song else "",
+            "formation_id": st.formation_id,
+            "formation_version": formation.version if formation else None,
+            "performance_order": st.performance_order,
+        })
+
+    confs = db.query(PerformanceConfirmation).filter(
+        PerformanceConfirmation.performance_id == task.id
+    ).all()
+    total = len(confs)
+    confirmed = sum(1 for c in confs if c.status == "confirmed")
+    unconfirmed = sum(1 for c in confs if c.status == "unconfirmed")
+    leave = sum(1 for c in confs if c.status == "leave")
+
+    return {
+        "id": task.id,
+        "name": task.name,
+        "location": task.location,
+        "meeting_time": task.meeting_time,
+        "start_time": task.start_time,
+        "costume_requirements": task.costume_requirements,
+        "notes": task.notes,
+        "created_at": task.created_at,
+        "song_tasks": song_task_dicts,
+        "total_members": total,
+        "confirmed_count": confirmed,
+        "unconfirmed_count": unconfirmed,
+        "leave_count": leave,
+    }
+
+
+def _get_confirmations_for_performance(db: Session, task_id: int) -> list[dict]:
+    confs = db.query(PerformanceConfirmation).filter(
+        PerformanceConfirmation.performance_id == task_id
+    ).all()
+    return [_confirmation_to_dict(db, c) for c in confs]
+
+
+def _confirmation_to_dict(db: Session, conf: PerformanceConfirmation) -> dict:
+    member = db.query(Member).filter(Member.id == conf.member_id).first()
+    return {
+        "id": conf.id,
+        "performance_id": conf.performance_id,
+        "member_id": conf.member_id,
+        "member_name": member.name if member else "",
+        "member_phone": member.phone if member else None,
+        "status": conf.status,
+        "transport_mode": conf.transport_mode,
+        "remark": conf.remark,
+        "phone_reminded": conf.phone_reminded,
+        "confirmed_at": conf.confirmed_at,
+    }
+
+
+def _get_song_performance_details(db: Session, task_id: int) -> list[dict]:
+    song_tasks = db.query(PerformanceSongTask).filter(
+        PerformanceSongTask.performance_id == task_id
+    ).order_by(PerformanceSongTask.performance_order).all()
+
+    leave_member_ids = set()
+    confirmed_member_ids = set()
+    confs = db.query(PerformanceConfirmation).filter(
+        PerformanceConfirmation.performance_id == task_id
+    ).all()
+    for c in confs:
+        if c.status == "leave":
+            leave_member_ids.add(c.member_id)
+        elif c.status == "confirmed":
+            confirmed_member_ids.add(c.member_id)
+
+    details = []
+    for st in song_tasks:
+        song = db.query(Song).filter(Song.id == st.song_id).first()
+        formation = None
+        positions = []
+        if st.formation_id:
+            formation = db.query(Formation).filter(Formation.id == st.formation_id).first()
+            positions = db.query(FormationPosition).filter(
+                FormationPosition.formation_id == st.formation_id
+            ).all()
+        elif song:
+            latest_formation = (
+                db.query(Formation)
+                .filter(Formation.song_id == song.id)
+                .order_by(Formation.version.desc())
+                .first()
+            )
+            if latest_formation:
+                formation = latest_formation
+                positions = db.query(FormationPosition).filter(
+                    FormationPosition.formation_id == latest_formation.id
+                ).all()
+
+        leave_members = []
+        confirmed_substitutes = []
+        gap_positions = []
+
+        for pos in positions:
+            if pos.member_id:
+                if pos.member_id in leave_member_ids:
+                    member = db.query(Member).filter(Member.id == pos.member_id).first()
+                    leave_members.append({
+                        "position_id": pos.position_id,
+                        "member_id": pos.member_id,
+                        "member_name": member.name if member else "",
+                    })
+
+                    sub_assign = (
+                        db.query(SubstituteAssignment)
+                        .filter(
+                            SubstituteAssignment.song_id == st.song_id,
+                            SubstituteAssignment.absent_member_id == pos.member_id,
+                            SubstituteAssignment.position_id == pos.position_id,
+                        )
+                        .order_by(SubstituteAssignment.priority)
+                        .first()
+                    )
+                    if sub_assign and sub_assign.substitute_member_id in confirmed_member_ids:
+                        sub_member = db.query(Member).filter(Member.id == sub_assign.substitute_member_id).first()
+                        confirmed_substitutes.append({
+                            "position_id": pos.position_id,
+                            "substitute_member_id": sub_assign.substitute_member_id,
+                            "substitute_member_name": sub_member.name if sub_member else "",
+                        })
+                    else:
+                        gap_positions.append(pos.position_id)
+
+        details.append({
+            "song_id": st.song_id,
+            "song_name": song.name if song else "",
+            "formation_id": formation.id if formation else None,
+            "formation_version": formation.version if formation else None,
+            "total_positions": len(positions),
+            "leave_members": leave_members,
+            "confirmed_substitutes": confirmed_substitutes,
+            "gap_positions": gap_positions,
+        })
+
+    return details
