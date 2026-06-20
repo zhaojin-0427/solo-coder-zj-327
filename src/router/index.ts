@@ -45,6 +45,21 @@ const routes: RouteRecordRaw[] = [
     name: 'statistics',
     component: () => import('@/pages/StatisticsPage.vue'),
   },
+  {
+    path: '/safety-check',
+    name: 'safety-check',
+    component: () => import('@/pages/SafetyCheckPage.vue'),
+  },
+  {
+    path: '/emergency',
+    name: 'emergency',
+    component: () => import('@/pages/EmergencyPage.vue'),
+  },
+  {
+    path: '/risk-members',
+    name: 'risk-members',
+    component: () => import('@/pages/RiskMembersPage.vue'),
+  },
 ]
 
 const router = createRouter({

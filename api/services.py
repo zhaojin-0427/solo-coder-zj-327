@@ -7,6 +7,8 @@ from models import (
     Formation, FormationPosition, Rehearsal, RehearsalError,
     Attendance, SubstituteAssignment,
     PerformanceTask, PerformanceSongTask, PrePerformanceChecklist, PrePerformanceCheckItem,
+    MemberHealthRecord, TrainingSafetyChecklist, EmergencyIncident,
+    RiskMember, VenueHazardRecord,
 )
 from schemas import (
     FormationPositionUpdate,
@@ -997,3 +999,851 @@ def get_performance_confirmation_stats(db: Session) -> list[dict]:
             "phone_reminder_rate": remind_rate,
         })
     return result
+
+
+HEALTH_CONDITION_DISPLAY = {
+    "heart_disease": "心脏病",
+    "hypertension": "高血压",
+    "diabetes": "糖尿病",
+    "asthma": "哮喘",
+    "joint_pain": "关节疼痛",
+    "dizziness": "眩晕症",
+    "allergy": "过敏",
+    "injury": "旧伤",
+    "other": "其他",
+}
+
+GROUND_CONDITION_DISPLAY = {
+    "good": "良好",
+    "fair": "一般",
+    "poor": "较差",
+}
+
+WEATHER_CONDITION_DISPLAY = {
+    "sunny": "晴天",
+    "cloudy": "多云",
+    "rainy": "雨天",
+    "windy": "大风",
+    "hot": "高温",
+    "cold": "寒冷",
+}
+
+RISK_LEVEL_DISPLAY = {
+    "low": "低风险",
+    "medium": "中风险",
+    "high": "高风险",
+    "critical": "极高风险",
+}
+
+INCIDENT_TYPE_DISPLAY = {
+    "sprain": "扭伤",
+    "dizziness": "头晕",
+    "fall": "摔倒",
+    "cable_trip": "设备绊线",
+    "heat_stroke": "中暑",
+    "dehydration": "脱水",
+    "heart_issue": "心脏不适",
+    "breathing_difficulty": "呼吸困难",
+    "injury": "受伤",
+    "other": "其他",
+}
+
+INCIDENT_SEVERITY_DISPLAY = {
+    "minor": "轻微",
+    "moderate": "中等",
+    "severe": "严重",
+    "critical": "危急",
+}
+
+HAZARD_TYPE_DISPLAY = {
+    "slippery_floor": "地面湿滑",
+    "obstacle": "障碍物",
+    "loose_cable": "电线松动",
+    "uneven_ground": "地面不平",
+    "poor_lighting": "照明不良",
+    "sharp_edge": "尖锐边缘",
+    "lack_of_first_aid": "缺乏急救设备",
+    "other": "其他",
+}
+
+RISK_MEMBER_STATUS_DISPLAY = {
+    "pending": "待处理",
+    "adjusted": "已调整站位",
+    "resting": "安排休息",
+    "monitoring": "持续观察",
+}
+
+
+def _health_record_to_dict(record: MemberHealthRecord) -> dict:
+    return {
+        "id": record.id,
+        "member_id": record.member_id,
+        "member_name": record.member.name if record.member else "",
+        "record_date": record.record_date,
+        "condition_type": record.condition_type,
+        "description": record.description,
+        "is_chronic": record.is_chronic,
+        "needs_accommodation": record.needs_accommodation,
+        "accommodation_notes": record.accommodation_notes,
+        "created_at": record.created_at,
+    }
+
+
+def get_health_records(db: Session, member_id: int | None = None) -> list[dict]:
+    query = db.query(MemberHealthRecord)
+    if member_id:
+        query = query.filter(MemberHealthRecord.member_id == member_id)
+    records = query.order_by(MemberHealthRecord.record_date.desc()).all()
+    return [_health_record_to_dict(r) for r in records]
+
+
+def get_health_record(db: Session, record_id: int) -> dict | None:
+    record = db.query(MemberHealthRecord).filter(MemberHealthRecord.id == record_id).first()
+    if not record:
+        return None
+    return _health_record_to_dict(record)
+
+
+def create_health_record(db: Session, data: dict) -> dict:
+    record = MemberHealthRecord(**data)
+    db.add(record)
+    db.commit()
+    db.refresh(record)
+    return _health_record_to_dict(record)
+
+
+def update_health_record(db: Session, record_id: int, data: dict) -> dict | None:
+    record = db.query(MemberHealthRecord).filter(MemberHealthRecord.id == record_id).first()
+    if not record:
+        return None
+    for key, value in data.items():
+        setattr(record, key, value)
+    db.commit()
+    db.refresh(record)
+    return _health_record_to_dict(record)
+
+
+def delete_health_record(db: Session, record_id: int) -> bool:
+    record = db.query(MemberHealthRecord).filter(MemberHealthRecord.id == record_id).first()
+    if not record:
+        return False
+    db.delete(record)
+    db.commit()
+    return True
+
+
+def get_member_with_health(db: Session, member_id: int) -> dict | None:
+    member = db.query(Member).filter(Member.id == member_id).first()
+    if not member:
+        return None
+    song_ids = [ms.song_id for ms in member.member_songs]
+    sub_positions = [sp.position_label for sp in member.substitute_positions]
+    health_records = [_health_record_to_dict(hr) for hr in member.health_records]
+    return {
+        "id": member.id,
+        "name": member.name,
+        "height_range": member.height_range,
+        "phone": member.phone,
+        "age": member.age,
+        "emergency_contact": member.emergency_contact,
+        "song_ids": song_ids,
+        "substitute_positions": sub_positions,
+        "created_at": member.created_at,
+        "health_records": health_records,
+    }
+
+
+def _safety_checklist_to_dict(checklist: TrainingSafetyChecklist) -> dict:
+    return {
+        "id": checklist.id,
+        "rehearsal_id": checklist.rehearsal_id,
+        "song_id": checklist.rehearsal.song_id if checklist.rehearsal else None,
+        "song_name": checklist.rehearsal.song.name if checklist.rehearsal and checklist.rehearsal.song else "",
+        "rehearsal_date": checklist.rehearsal.date if checklist.rehearsal else None,
+        "ground_condition": checklist.ground_condition,
+        "ground_notes": checklist.ground_notes,
+        "audio_cables_arranged": checklist.audio_cables_arranged,
+        "audio_cables_notes": checklist.audio_cables_notes,
+        "members_illness_reported": checklist.members_illness_reported,
+        "illness_notes": checklist.illness_notes,
+        "weather_temperature": checklist.weather_temperature,
+        "weather_condition": checklist.weather_condition,
+        "weather_notes": checklist.weather_notes,
+        "drinking_water_provided": checklist.drinking_water_provided,
+        "rest_schedule_arranged": checklist.rest_schedule_arranged,
+        "rest_notes": checklist.rest_notes,
+        "high_risk_moves_reminded": checklist.high_risk_moves_reminded,
+        "high_risk_moves_notes": checklist.high_risk_moves_notes,
+        "risk_level": checklist.risk_level,
+        "risk_assessment_notes": checklist.risk_assessment_notes,
+        "created_by": checklist.created_by,
+        "created_by_name": "",
+        "created_at": checklist.created_at,
+        "incident_count": len(checklist.incidents),
+    }
+
+
+def get_safety_checklists(db: Session, rehearsal_id: int | None = None) -> list[dict]:
+    query = db.query(TrainingSafetyChecklist)
+    if rehearsal_id:
+        query = query.filter(TrainingSafetyChecklist.rehearsal_id == rehearsal_id)
+    checklists = query.order_by(TrainingSafetyChecklist.created_at.desc()).all()
+    return [_safety_checklist_to_dict(c) for c in checklists]
+
+
+def get_safety_checklist(db: Session, checklist_id: int) -> dict | None:
+    checklist = db.query(TrainingSafetyChecklist).filter(TrainingSafetyChecklist.id == checklist_id).first()
+    if not checklist:
+        return None
+    return _safety_checklist_to_dict(checklist)
+
+
+def _calculate_risk_level(db: Session, checklist: TrainingSafetyChecklist) -> tuple[str, int, list[str], list[str]]:
+    risk_score = 0
+    risk_factors = []
+    recommendations = []
+
+    if checklist.ground_condition == "poor":
+        risk_score += 3
+        risk_factors.append("场地地面情况较差")
+        recommendations.append("建议更换训练场地或暂停高强度动作")
+    elif checklist.ground_condition == "fair":
+        risk_score += 1
+        risk_factors.append("场地地面情况一般")
+        recommendations.append("提醒队员注意地面状况")
+
+    if not checklist.audio_cables_arranged:
+        risk_score += 2
+        risk_factors.append("音响电线未整理")
+        recommendations.append("请立即整理音响电线，避免绊倒风险")
+
+    if checklist.members_illness_reported:
+        risk_score += 2
+        risk_factors.append("有队员报告身体不适")
+        recommendations.append("重点关注身体不适队员，必要时安排休息")
+
+    if checklist.weather_temperature is not None:
+        if checklist.weather_temperature >= 35:
+            risk_score += 3
+            risk_factors.append(f"高温天气({checklist.weather_temperature}°C)")
+            recommendations.append("减少训练强度，增加饮水和休息频率，注意防暑")
+        elif checklist.weather_temperature <= 5:
+            risk_score += 2
+            risk_factors.append(f"低温天气({checklist.weather_temperature}°C)")
+            recommendations.append("做好热身准备，注意保暖")
+
+    if checklist.weather_condition in ["rainy", "windy"]:
+        risk_score += 2
+        risk_factors.append(f"{WEATHER_CONDITION_DISPLAY.get(checklist.weather_condition, '')}天气")
+        recommendations.append("考虑改为室内训练或调整训练内容")
+
+    if not checklist.drinking_water_provided:
+        risk_score += 1
+        risk_factors.append("未准备饮用水")
+        recommendations.append("请准备充足的饮用水")
+
+    if not checklist.rest_schedule_arranged:
+        risk_score += 1
+        risk_factors.append("未安排休息计划")
+        recommendations.append("请合理安排训练和休息时间")
+
+    if not checklist.high_risk_moves_reminded:
+        risk_score += 1
+        risk_factors.append("未进行高风险动作提示")
+        recommendations.append("训练前提醒高风险动作注意事项")
+
+    rehearsal = checklist.rehearsal
+    if rehearsal:
+        song_member_ids = [ms.member_id for ms in db.query(MemberSong).filter(MemberSong.song_id == rehearsal.song_id).all()]
+        members = db.query(Member).filter(Member.id.in_(song_member_ids)).all()
+        for member in members:
+            if member.age is not None:
+                if member.age >= 65:
+                    risk_score += 1
+                    risk_factors.append(f"队员{member.name}年龄较大({member.age}岁)")
+                elif member.age <= 12:
+                    risk_score += 1
+                    risk_factors.append(f"队员{member.name}年龄较小({member.age}岁)")
+            health_records = member.health_records
+            for hr in health_records:
+                if hr.is_chronic and hr.condition_type in ["heart_disease", "hypertension", "diabetes", "asthma"]:
+                    risk_score += 2
+                    risk_factors.append(f"队员{member.name}有慢性{HEALTH_CONDITION_DISPLAY.get(hr.condition_type, hr.condition_type)}病史")
+
+    if risk_score >= 10:
+        risk_level = "critical"
+    elif risk_score >= 6:
+        risk_level = "high"
+    elif risk_score >= 3:
+        risk_level = "medium"
+    else:
+        risk_level = "low"
+
+    return risk_level, risk_score, risk_factors, recommendations
+
+
+def _identify_risk_members(db: Session, checklist: TrainingSafetyChecklist) -> list[dict]:
+    risk_members = []
+    rehearsal = checklist.rehearsal
+    if not rehearsal:
+        return risk_members
+
+    song_member_ids = [ms.member_id for ms in db.query(MemberSong).filter(MemberSong.song_id == rehearsal.song_id).all()]
+    members = db.query(Member).filter(Member.id.in_(song_member_ids)).all()
+
+    for member in members:
+        risk_factors = []
+        risk_score = 0
+        recommendation = ""
+
+        if member.age is not None:
+            if member.age >= 65:
+                risk_score += 2
+                risk_factors.append(f"年龄较大({member.age}岁)")
+            elif member.age <= 12:
+                risk_score += 1
+                risk_factors.append(f"年龄较小({member.age}岁)")
+
+        health_records = member.health_records
+        for hr in health_records:
+            if hr.is_chronic:
+                condition_name = HEALTH_CONDITION_DISPLAY.get(hr.condition_type, hr.condition_type)
+                risk_score += 3 if hr.condition_type in ["heart_disease", "hypertension"] else 2
+                risk_factors.append(f"慢性{condition_name}")
+            if hr.condition_type == "joint_pain":
+                risk_score += 1
+                risk_factors.append("关节疼痛史")
+            if hr.condition_type == "dizziness":
+                risk_score += 2
+                risk_factors.append("眩晕史")
+
+        if risk_score >= 5:
+            risk_level = "high"
+        elif risk_score >= 3:
+            risk_level = "medium"
+        elif risk_score >= 1:
+            risk_level = "low"
+        else:
+            continue
+
+        if risk_level in ["high", "medium"]:
+            if risk_level == "high":
+                recommendation = "建议安排旁观休息或减少高强度动作参与"
+            else:
+                recommendation = "建议调整至低强度站位，避免剧烈动作"
+
+            risk_members.append({
+                "checklist_id": checklist.id,
+                "member_id": member.id,
+                "member_name": member.name,
+                "member_age": member.age,
+                "risk_level": risk_level,
+                "risk_factors": "、".join(risk_factors),
+                "recommendation": recommendation,
+            })
+
+    return risk_members
+
+
+def create_safety_checklist(db: Session, data: dict) -> dict:
+    checklist = TrainingSafetyChecklist(**data)
+    db.add(checklist)
+    db.flush()
+
+    risk_level, risk_score, risk_factors, recommendations = _calculate_risk_level(db, checklist)
+    checklist.risk_level = risk_level
+    checklist.risk_assessment_notes = "、".join(risk_factors) if risk_factors else None
+
+    risk_member_data = _identify_risk_members(db, checklist)
+    for rm in risk_member_data:
+        risk_member = RiskMember(
+            checklist_id=checklist.id,
+            member_id=rm["member_id"],
+            risk_level=rm["risk_level"],
+            risk_factors=rm["risk_factors"],
+            recommendation=rm["recommendation"],
+            status="pending",
+        )
+        db.add(risk_member)
+
+    db.commit()
+    db.refresh(checklist)
+    return _safety_checklist_to_dict(checklist)
+
+
+def update_safety_checklist(db: Session, checklist_id: int, data: dict) -> dict | None:
+    checklist = db.query(TrainingSafetyChecklist).filter(TrainingSafetyChecklist.id == checklist_id).first()
+    if not checklist:
+        return None
+    for key, value in data.items():
+        setattr(checklist, key, value)
+
+    risk_level, risk_score, risk_factors, recommendations = _calculate_risk_level(db, checklist)
+    checklist.risk_level = risk_level
+    checklist.risk_assessment_notes = "、".join(risk_factors) if risk_factors else None
+
+    existing_risk_members = db.query(RiskMember).filter(RiskMember.checklist_id == checklist_id).all()
+    for rm in existing_risk_members:
+        db.delete(rm)
+    db.flush()
+
+    risk_member_data = _identify_risk_members(db, checklist)
+    for rm in risk_member_data:
+        risk_member = RiskMember(
+            checklist_id=checklist.id,
+            member_id=rm["member_id"],
+            risk_level=rm["risk_level"],
+            risk_factors=rm["risk_factors"],
+            recommendation=rm["recommendation"],
+            status="pending",
+        )
+        db.add(risk_member)
+
+    db.commit()
+    db.refresh(checklist)
+    return _safety_checklist_to_dict(checklist)
+
+
+def delete_safety_checklist(db: Session, checklist_id: int) -> bool:
+    checklist = db.query(TrainingSafetyChecklist).filter(TrainingSafetyChecklist.id == checklist_id).first()
+    if not checklist:
+        return False
+    db.delete(checklist)
+    db.commit()
+    return True
+
+
+def assess_risks(db: Session, checklist_id: int) -> dict | None:
+    checklist = db.query(TrainingSafetyChecklist).filter(TrainingSafetyChecklist.id == checklist_id).first()
+    if not checklist:
+        return None
+
+    risk_level, risk_score, risk_factors, recommendations = _calculate_risk_level(db, checklist)
+
+    checklist.risk_level = risk_level
+    checklist.risk_assessment_notes = "、".join(risk_factors) if risk_factors else None
+
+    existing_risk_members = db.query(RiskMember).filter(RiskMember.checklist_id == checklist_id).all()
+    for rm in existing_risk_members:
+        db.delete(rm)
+    db.flush()
+
+    risk_member_data = _identify_risk_members(db, checklist)
+    high_risk_members = []
+    for rm in risk_member_data:
+        risk_member = RiskMember(
+            checklist_id=checklist.id,
+            member_id=rm["member_id"],
+            risk_level=rm["risk_level"],
+            risk_factors=rm["risk_factors"],
+            recommendation=rm["recommendation"],
+            status="pending",
+        )
+        db.add(risk_member)
+        high_risk_members.append(_risk_member_to_dict(risk_member))
+
+    db.commit()
+
+    weather_warning = None
+    if checklist.weather_temperature is not None and checklist.weather_temperature >= 35:
+        weather_warning = f"高温预警：当前温度{checklist.weather_temperature}°C，请减少高强度训练，注意防暑降温"
+    elif checklist.weather_condition == "rainy":
+        weather_warning = "雨天预警：场地可能湿滑，建议改为室内训练"
+
+    return {
+        "checklist_id": checklist_id,
+        "overall_risk_level": risk_level,
+        "risk_score": risk_score,
+        "risk_factors": risk_factors,
+        "recommendations": recommendations,
+        "high_risk_members": high_risk_members,
+        "weather_warning": weather_warning,
+    }
+
+
+def _emergency_incident_to_dict(incident: EmergencyIncident) -> dict:
+    return {
+        "id": incident.id,
+        "checklist_id": incident.checklist_id,
+        "rehearsal_id": incident.checklist.rehearsal_id if incident.checklist else None,
+        "member_id": incident.member_id,
+        "member_name": incident.member.name if incident.member else "",
+        "member_phone": incident.member.phone if incident.member else None,
+        "emergency_contact": incident.member.emergency_contact if incident.member else None,
+        "incident_type": incident.incident_type,
+        "song_id": incident.song_id,
+        "song_name": incident.song.name if incident.song else "",
+        "position_id": incident.position_id,
+        "formation_position": incident.formation_position,
+        "description": incident.description,
+        "severity": incident.severity,
+        "treatment_given": incident.treatment_given,
+        "treated_by": incident.treated_by,
+        "family_notified": incident.family_notified,
+        "family_notification_details": incident.family_notification_details,
+        "community_leader_notified": incident.community_leader_notified,
+        "community_notification_details": incident.community_notification_details,
+        "follow_up_required": incident.follow_up_required,
+        "follow_up_notes": incident.follow_up_notes,
+        "incident_time": incident.incident_time,
+        "resolved": incident.resolved,
+        "resolved_time": incident.resolved_time,
+    }
+
+
+def get_emergency_incidents(db: Session, checklist_id: int | None = None, member_id: int | None = None) -> list[dict]:
+    query = db.query(EmergencyIncident)
+    if checklist_id:
+        query = query.filter(EmergencyIncident.checklist_id == checklist_id)
+    if member_id:
+        query = query.filter(EmergencyIncident.member_id == member_id)
+    incidents = query.order_by(EmergencyIncident.incident_time.desc()).all()
+    return [_emergency_incident_to_dict(i) for i in incidents]
+
+
+def get_emergency_incident(db: Session, incident_id: int) -> dict | None:
+    incident = db.query(EmergencyIncident).filter(EmergencyIncident.id == incident_id).first()
+    if not incident:
+        return None
+    return _emergency_incident_to_dict(incident)
+
+
+def create_emergency_incident(db: Session, data: dict) -> dict:
+    incident = EmergencyIncident(**data)
+    db.add(incident)
+    db.commit()
+    db.refresh(incident)
+    return _emergency_incident_to_dict(incident)
+
+
+def update_emergency_incident(db: Session, incident_id: int, data: dict) -> dict | None:
+    incident = db.query(EmergencyIncident).filter(EmergencyIncident.id == incident_id).first()
+    if not incident:
+        return None
+    for key, value in data.items():
+        setattr(incident, key, value)
+        if key == "resolved" and value and incident.resolved_time is None:
+            incident.resolved_time = datetime.now()
+    db.commit()
+    db.refresh(incident)
+    return _emergency_incident_to_dict(incident)
+
+
+def resolve_emergency_incident(db: Session, incident_id: int) -> dict | None:
+    incident = db.query(EmergencyIncident).filter(EmergencyIncident.id == incident_id).first()
+    if not incident:
+        return None
+    incident.resolved = True
+    incident.resolved_time = datetime.now()
+    db.commit()
+    db.refresh(incident)
+    return _emergency_incident_to_dict(incident)
+
+
+def _risk_member_to_dict(rm: RiskMember) -> dict:
+    return {
+        "id": rm.id,
+        "checklist_id": rm.checklist_id,
+        "rehearsal_id": rm.checklist.rehearsal_id if rm.checklist else None,
+        "member_id": rm.member_id,
+        "member_name": rm.member.name if rm.member else "",
+        "member_age": rm.member.age if rm.member else None,
+        "risk_level": rm.risk_level,
+        "risk_factors": rm.risk_factors,
+        "recommendation": rm.recommendation,
+        "action_taken": rm.action_taken,
+        "status": rm.status,
+        "created_at": rm.created_at,
+    }
+
+
+def get_risk_members(db: Session, checklist_id: int | None = None, member_id: int | None = None) -> list[dict]:
+    query = db.query(RiskMember)
+    if checklist_id:
+        query = query.filter(RiskMember.checklist_id == checklist_id)
+    if member_id:
+        query = query.filter(RiskMember.member_id == member_id)
+    risk_members = query.order_by(RiskMember.created_at.desc()).all()
+    return [_risk_member_to_dict(rm) for rm in risk_members]
+
+
+def get_risk_member(db: Session, risk_member_id: int) -> dict | None:
+    rm = db.query(RiskMember).filter(RiskMember.id == risk_member_id).first()
+    if not rm:
+        return None
+    return _risk_member_to_dict(rm)
+
+
+def create_risk_member(db: Session, data: dict) -> dict:
+    rm = RiskMember(**data)
+    db.add(rm)
+    db.commit()
+    db.refresh(rm)
+    return _risk_member_to_dict(rm)
+
+
+def update_risk_member(db: Session, risk_member_id: int, data: dict) -> dict | None:
+    rm = db.query(RiskMember).filter(RiskMember.id == risk_member_id).first()
+    if not rm:
+        return None
+    for key, value in data.items():
+        setattr(rm, key, value)
+    db.commit()
+    db.refresh(rm)
+    return _risk_member_to_dict(rm)
+
+
+def _venue_hazard_to_dict(hazard: VenueHazardRecord) -> dict:
+    return {
+        "id": hazard.id,
+        "rehearsal_id": hazard.rehearsal_id,
+        "song_id": hazard.rehearsal.song_id if hazard.rehearsal else None,
+        "song_name": hazard.rehearsal.song.name if hazard.rehearsal and hazard.rehearsal.song else "",
+        "hazard_type": hazard.hazard_type,
+        "location": hazard.location,
+        "description": hazard.description,
+        "severity": hazard.severity,
+        "reported_by": hazard.reported_by,
+        "reported_by_name": "",
+        "resolved": hazard.resolved,
+        "resolution_notes": hazard.resolution_notes,
+        "resolved_at": hazard.resolved_at,
+        "created_at": hazard.created_at,
+    }
+
+
+def get_venue_hazards(db: Session, rehearsal_id: int | None = None, unresolved_only: bool = False) -> list[dict]:
+    query = db.query(VenueHazardRecord)
+    if rehearsal_id:
+        query = query.filter(VenueHazardRecord.rehearsal_id == rehearsal_id)
+    if unresolved_only:
+        query = query.filter(VenueHazardRecord.resolved == False)
+    hazards = query.order_by(VenueHazardRecord.created_at.desc()).all()
+    return [_venue_hazard_to_dict(h) for h in hazards]
+
+
+def get_venue_hazard(db: Session, hazard_id: int) -> dict | None:
+    hazard = db.query(VenueHazardRecord).filter(VenueHazardRecord.id == hazard_id).first()
+    if not hazard:
+        return None
+    return _venue_hazard_to_dict(hazard)
+
+
+def create_venue_hazard(db: Session, data: dict) -> dict:
+    hazard = VenueHazardRecord(**data)
+    db.add(hazard)
+    db.commit()
+    db.refresh(hazard)
+    return _venue_hazard_to_dict(hazard)
+
+
+def update_venue_hazard(db: Session, hazard_id: int, data: dict) -> dict | None:
+    hazard = db.query(VenueHazardRecord).filter(VenueHazardRecord.id == hazard_id).first()
+    if not hazard:
+        return None
+    for key, value in data.items():
+        setattr(hazard, key, value)
+        if key == "resolved" and value and hazard.resolved_at is None:
+            hazard.resolved_at = datetime.now()
+    db.commit()
+    db.refresh(hazard)
+    return _venue_hazard_to_dict(hazard)
+
+
+def resolve_venue_hazard(db: Session, hazard_id: int) -> dict | None:
+    hazard = db.query(VenueHazardRecord).filter(VenueHazardRecord.id == hazard_id).first()
+    if not hazard:
+        return None
+    hazard.resolved = True
+    hazard.resolved_at = datetime.now()
+    db.commit()
+    db.refresh(hazard)
+    return _venue_hazard_to_dict(hazard)
+
+
+def get_safety_overview_stats(db: Session) -> dict:
+    total_checklists = db.query(func.count(TrainingSafetyChecklist.id)).scalar()
+    total_incidents = db.query(func.count(EmergencyIncident.id)).scalar()
+    total_hazards = db.query(func.count(VenueHazardRecord.id)).scalar()
+
+    high_risk_members_count = db.query(func.count(func.distinct(RiskMember.member_id))).filter(
+        RiskMember.risk_level.in_(["high", "critical"])
+    ).scalar()
+
+    incident_rate = round(total_incidents / total_checklists, 2) if total_checklists > 0 else 0
+
+    resolved_hazards = db.query(func.count(VenueHazardRecord.id)).filter(
+        VenueHazardRecord.resolved == True
+    ).scalar()
+    hazard_resolution_rate = round(resolved_hazards / total_hazards, 2) if total_hazards > 0 else 0
+
+    risk_level_counts = db.query(
+        TrainingSafetyChecklist.risk_level,
+        func.count(TrainingSafetyChecklist.id)
+    ).group_by(TrainingSafetyChecklist.risk_level).all()
+    risk_level_map = {r[0]: r[1] for r in risk_level_counts}
+    if risk_level_map.get("critical", 0) > 0:
+        avg_risk_level = "critical"
+    elif risk_level_map.get("high", 0) > risk_level_map.get("medium", 0) and risk_level_map.get("high", 0) > risk_level_map.get("low", 0):
+        avg_risk_level = "high"
+    elif risk_level_map.get("medium", 0) > risk_level_map.get("low", 0):
+        avg_risk_level = "medium"
+    else:
+        avg_risk_level = "low"
+
+    return {
+        "total_checklists": total_checklists,
+        "total_incidents": total_incidents,
+        "total_hazards": total_hazards,
+        "high_risk_member_count": high_risk_members_count,
+        "incident_rate": incident_rate,
+        "hazard_resolution_rate": hazard_resolution_rate,
+        "avg_risk_level": avg_risk_level,
+    }
+
+
+def get_incident_type_stats(db: Session) -> list[dict]:
+    total_incidents = db.query(func.count(EmergencyIncident.id)).scalar()
+    results = db.query(
+        EmergencyIncident.incident_type,
+        func.count(EmergencyIncident.id)
+    ).group_by(EmergencyIncident.incident_type).all()
+    return [
+        {
+            "incident_type": r[0],
+            "count": r[1],
+            "rate": round(r[1] / total_incidents, 2) if total_incidents > 0 else 0,
+        }
+        for r in results
+    ]
+
+
+def get_rehearsal_safety_stats(db: Session) -> list[dict]:
+    checklists = db.query(TrainingSafetyChecklist).order_by(TrainingSafetyChecklist.created_at.desc()).all()
+    results = []
+    for cl in checklists:
+        incident_count = len(cl.incidents)
+        hazard_count = db.query(func.count(VenueHazardRecord.id)).filter(
+            VenueHazardRecord.rehearsal_id == cl.rehearsal_id
+        ).scalar()
+        high_risk_count = len([rm for rm in cl.risk_members if rm.risk_level in ["high", "critical"]])
+        family_notified_count = sum(1 for inc in cl.incidents if inc.family_notified)
+
+        song_name = cl.rehearsal.song.name if cl.rehearsal and cl.rehearsal.song else ""
+        rehearsal_date = cl.rehearsal.date.strftime("%Y-%m-%d") if cl.rehearsal and cl.rehearsal.date else ""
+
+        results.append({
+            "rehearsal_id": cl.rehearsal_id,
+            "rehearsal_date": rehearsal_date,
+            "song_name": song_name,
+            "risk_level": cl.risk_level,
+            "incident_count": incident_count,
+            "hazard_count": hazard_count,
+            "high_risk_member_count": high_risk_count,
+            "family_notified_count": family_notified_count,
+        })
+    return results
+
+
+def get_high_risk_members_stats(db: Session) -> list[dict]:
+    from collections import defaultdict
+
+    member_incidents = defaultdict(int)
+    member_last_incident = {}
+    incidents = db.query(EmergencyIncident).all()
+    for inc in incidents:
+        member_incidents[inc.member_id] += 1
+        if inc.member_id not in member_last_incident or (inc.incident_time and inc.incident_time > member_last_incident[inc.member_id]):
+            member_last_incident[inc.member_id] = inc.incident_time
+
+    high_risk_members = db.query(RiskMember).filter(
+        RiskMember.risk_level.in_(["high", "medium"])
+    ).all()
+
+    member_map = {}
+    for rm in high_risk_members:
+        mid = rm.member_id
+        if mid not in member_map:
+            member = db.query(Member).filter(Member.id == mid).first()
+            health_conditions = []
+            for hr in member.health_records if member else []:
+                cond_name = HEALTH_CONDITION_DISPLAY.get(hr.condition_type, hr.condition_type)
+                if hr.is_chronic:
+                    cond_name = "慢性" + cond_name
+                health_conditions.append(cond_name)
+
+            member_map[mid] = {
+                "member_id": mid,
+                "member_name": member.name if member else "",
+                "member_age": member.age if member else None,
+                "incident_count": member_incidents.get(mid, 0),
+                "risk_level": rm.risk_level,
+                "health_conditions": health_conditions,
+                "last_incident_date": member_last_incident.get(mid),
+            }
+        elif rm.risk_level == "high" and member_map[mid]["risk_level"] != "high":
+            member_map[mid]["risk_level"] = "high"
+
+    result = list(member_map.values())
+    result.sort(key=lambda x: (0 if x["risk_level"] == "high" else 1, -x["incident_count"]))
+    for item in result:
+        if item["last_incident_date"]:
+            item["last_incident_date"] = item["last_incident_date"].strftime("%Y-%m-%d")
+    return result
+
+
+def get_hazard_type_stats(db: Session) -> list[dict]:
+    results = db.query(
+        VenueHazardRecord.hazard_type,
+        func.count(VenueHazardRecord.id),
+        func.sum(func.iif(VenueHazardRecord.resolved == False, 1, 0)),
+    ).group_by(VenueHazardRecord.hazard_type).all()
+    return [
+        {
+            "hazard_type": r[0],
+            "count": r[1],
+            "unresolved_count": r[2] or 0,
+        }
+        for r in results
+    ]
+
+
+def get_emergency_response_stats(db: Session) -> dict:
+    total_incidents = db.query(func.count(EmergencyIncident.id)).scalar()
+    resolved_count = db.query(func.count(EmergencyIncident.id)).filter(
+        EmergencyIncident.resolved == True
+    ).scalar()
+    family_notified_count = db.query(func.count(EmergencyIncident.id)).filter(
+        EmergencyIncident.family_notified == True
+    ).scalar()
+    community_notified_count = db.query(func.count(EmergencyIncident.id)).filter(
+        EmergencyIncident.community_leader_notified == True
+    ).scalar()
+
+    resolution_rate = round(resolved_count / total_incidents, 2) if total_incidents > 0 else 0
+    family_notification_rate = round(family_notified_count / total_incidents, 2) if total_incidents > 0 else 0
+    community_notification_rate = round(community_notified_count / total_incidents, 2) if total_incidents > 0 else 0
+
+    avg_response_time = None
+    resolved_incidents = db.query(EmergencyIncident).filter(
+        EmergencyIncident.resolved == True,
+        EmergencyIncident.incident_time.isnot(None),
+        EmergencyIncident.resolved_time.isnot(None),
+    ).all()
+    if resolved_incidents:
+        total_minutes = 0
+        for inc in resolved_incidents:
+            delta = inc.resolved_time - inc.incident_time
+            total_minutes += delta.total_seconds() / 60
+        avg_response_time = round(total_minutes / len(resolved_incidents), 1)
+
+    return {
+        "total_incidents": total_incidents,
+        "resolved_count": resolved_count,
+        "resolution_rate": resolution_rate,
+        "family_notified_count": family_notified_count,
+        "family_notification_rate": family_notification_rate,
+        "community_notified_count": community_notified_count,
+        "community_notification_rate": community_notification_rate,
+        "avg_response_time_minutes": avg_response_time,
+    }

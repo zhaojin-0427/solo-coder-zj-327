@@ -33,12 +33,16 @@ class Member(Base):
     name = Column(String(50), nullable=False)
     height_range = Column(String(10), nullable=False)
     phone = Column(String(20))
+    age = Column(Integer)
+    emergency_contact = Column(String(20))
     created_at = Column(DateTime, server_default=func.now())
 
     member_songs = relationship("MemberSong", back_populates="member", cascade="all, delete-orphan")
     substitute_positions = relationship("MemberSubstitutePosition", back_populates="member", cascade="all, delete-orphan")
     formation_positions = relationship("FormationPosition", back_populates="member")
     attendance = relationship("Attendance", back_populates="member", cascade="all, delete-orphan")
+    health_records = relationship("MemberHealthRecord", back_populates="member", cascade="all, delete-orphan")
+    emergency_incidents = relationship("EmergencyIncident", back_populates="member", foreign_keys="EmergencyIncident.member_id")
 
     __table_args__ = (
         CheckConstraint("height_range IN ('short', 'medium', 'tall')", name="ck_members_height_range"),
@@ -259,5 +263,169 @@ class PrePerformanceCheckItem(Base):
         CheckConstraint(
             "status IN ('not_started', 'in_progress', 'abnormal', 'completed')",
             name="ck_check_item_status",
+        ),
+    )
+
+
+class MemberHealthRecord(Base):
+    __tablename__ = "member_health_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    record_date = Column(Date, nullable=False)
+    condition_type = Column(String(30), nullable=False)
+    description = Column(Text)
+    is_chronic = Column(Boolean, nullable=False, default=False)
+    needs_accommodation = Column(Boolean, nullable=False, default=False)
+    accommodation_notes = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+
+    member = relationship("Member", back_populates="health_records")
+
+    __table_args__ = (
+        CheckConstraint(
+            "condition_type IN ('heart_disease', 'hypertension', 'diabetes', 'asthma', 'joint_pain', 'dizziness', 'allergy', 'injury', 'other')",
+            name="ck_health_condition_type",
+        ),
+    )
+
+
+class TrainingSafetyChecklist(Base):
+    __tablename__ = "training_safety_checklists"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rehearsal_id = Column(Integer, ForeignKey("rehearsals.id", ondelete="CASCADE"), nullable=False)
+    ground_condition = Column(String(20), nullable=False)
+    ground_notes = Column(Text)
+    audio_cables_arranged = Column(Boolean, nullable=False, default=False)
+    audio_cables_notes = Column(Text)
+    members_illness_reported = Column(Boolean, nullable=False, default=False)
+    illness_notes = Column(Text)
+    weather_temperature = Column(Float)
+    weather_condition = Column(String(20))
+    weather_notes = Column(Text)
+    drinking_water_provided = Column(Boolean, nullable=False, default=False)
+    rest_schedule_arranged = Column(Boolean, nullable=False, default=False)
+    rest_notes = Column(Text)
+    high_risk_moves_reminded = Column(Boolean, nullable=False, default=False)
+    high_risk_moves_notes = Column(Text)
+    risk_level = Column(String(10), nullable=False, default="low")
+    risk_assessment_notes = Column(Text)
+    created_by = Column(Integer, ForeignKey("members.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+
+    rehearsal = relationship("Rehearsal")
+    incidents = relationship("EmergencyIncident", back_populates="checklist")
+    risk_members = relationship("RiskMember", back_populates="checklist")
+
+    __table_args__ = (
+        CheckConstraint(
+            "ground_condition IN ('good', 'fair', 'poor')",
+            name="ck_ground_condition",
+        ),
+        CheckConstraint(
+            "weather_condition IN ('sunny', 'cloudy', 'rainy', 'windy', 'hot', 'cold')",
+            name="ck_weather_condition",
+        ),
+        CheckConstraint(
+            "risk_level IN ('low', 'medium', 'high', 'critical')",
+            name="ck_risk_level",
+        ),
+    )
+
+
+class EmergencyIncident(Base):
+    __tablename__ = "emergency_incidents"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    checklist_id = Column(Integer, ForeignKey("training_safety_checklists.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    incident_type = Column(String(20), nullable=False)
+    song_id = Column(Integer, ForeignKey("songs.id", ondelete="SET NULL"))
+    position_id = Column(String(20))
+    formation_position = Column(String(50))
+    description = Column(Text)
+    severity = Column(String(10), nullable=False, default="minor")
+    treatment_given = Column(Text)
+    treated_by = Column(String(50))
+    family_notified = Column(Boolean, nullable=False, default=False)
+    family_notification_details = Column(Text)
+    community_leader_notified = Column(Boolean, nullable=False, default=False)
+    community_notification_details = Column(Text)
+    follow_up_required = Column(Boolean, nullable=False, default=False)
+    follow_up_notes = Column(Text)
+    incident_time = Column(DateTime, server_default=func.now())
+    resolved = Column(Boolean, nullable=False, default=False)
+    resolved_time = Column(DateTime)
+
+    checklist = relationship("TrainingSafetyChecklist", back_populates="incidents")
+    member = relationship("Member", back_populates="emergency_incidents", foreign_keys=[member_id])
+    song = relationship("Song")
+
+    __table_args__ = (
+        CheckConstraint(
+            "incident_type IN ('sprain', 'dizziness', 'fall', 'cable_trip', 'heat_stroke', 'dehydration', 'heart_issue', 'breathing_difficulty', 'injury', 'other')",
+            name="ck_incident_type",
+        ),
+        CheckConstraint(
+            "severity IN ('minor', 'moderate', 'severe', 'critical')",
+            name="ck_incident_severity",
+        ),
+    )
+
+
+class RiskMember(Base):
+    __tablename__ = "risk_members"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    checklist_id = Column(Integer, ForeignKey("training_safety_checklists.id", ondelete="CASCADE"), nullable=False)
+    member_id = Column(Integer, ForeignKey("members.id", ondelete="CASCADE"), nullable=False)
+    risk_level = Column(String(10), nullable=False)
+    risk_factors = Column(Text)
+    recommendation = Column(Text)
+    action_taken = Column(Text)
+    status = Column(String(20), nullable=False, default="pending")
+    created_at = Column(DateTime, server_default=func.now())
+
+    checklist = relationship("TrainingSafetyChecklist", back_populates="risk_members")
+    member = relationship("Member")
+
+    __table_args__ = (
+        CheckConstraint(
+            "risk_level IN ('low', 'medium', 'high', 'critical')",
+            name="ck_risk_member_level",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'adjusted', 'resting', 'monitoring')",
+            name="ck_risk_member_status",
+        ),
+    )
+
+
+class VenueHazardRecord(Base):
+    __tablename__ = "venue_hazard_records"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    rehearsal_id = Column(Integer, ForeignKey("rehearsals.id", ondelete="CASCADE"), nullable=False)
+    hazard_type = Column(String(30), nullable=False)
+    location = Column(String(100))
+    description = Column(Text)
+    severity = Column(String(10), nullable=False, default="low")
+    reported_by = Column(Integer, ForeignKey("members.id", ondelete="SET NULL"))
+    resolved = Column(Boolean, nullable=False, default=False)
+    resolution_notes = Column(Text)
+    resolved_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+
+    rehearsal = relationship("Rehearsal")
+
+    __table_args__ = (
+        CheckConstraint(
+            "hazard_type IN ('slippery_floor', 'obstacle', 'loose_cable', 'uneven_ground', 'poor_lighting', 'sharp_edge', 'lack_of_first_aid', 'other')",
+            name="ck_hazard_type",
+        ),
+        CheckConstraint(
+            "severity IN ('low', 'medium', 'high', 'critical')",
+            name="ck_hazard_severity",
         ),
     )

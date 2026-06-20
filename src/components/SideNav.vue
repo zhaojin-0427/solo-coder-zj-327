@@ -28,7 +28,7 @@
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
-import { Music, LayoutGrid, Users, ArrowLeftRight, CalendarCheck, ClipboardCheck, BarChart3 } from 'lucide-vue-next'
+import { Music, LayoutGrid, Users, ArrowLeftRight, CalendarCheck, ClipboardCheck, BarChart3, AlertTriangle, ShieldCheck, FileWarning } from 'lucide-vue-next'
 
 const route = useRoute()
 
@@ -39,6 +39,9 @@ const navItems = [
   { path: '/substitute', label: '替补调整', icon: ArrowLeftRight },
   { path: '/performances', label: '演出任务', icon: CalendarCheck },
   { path: '/pre-check', label: '演前核验', icon: ClipboardCheck },
+  { path: '/safety-check', label: '安全检查', icon: ShieldCheck },
+  { path: '/emergency', label: '突发事件', icon: FileWarning },
+  { path: '/risk-members', label: '风险成员', icon: AlertTriangle },
   { path: '/statistics', label: '统计分析', icon: BarChart3 },
 ]
 

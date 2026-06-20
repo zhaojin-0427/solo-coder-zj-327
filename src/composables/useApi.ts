@@ -29,6 +29,25 @@ import type {
   PreCheckStatItem,
   MemberCompletionRankItem,
   FrequentAbnormalTypeItem,
+  MemberHealthRecord,
+  MemberWithHealth,
+  TrainingSafetyChecklist,
+  EmergencyIncident,
+  RiskMember,
+  RiskAssessment,
+  VenueHazard,
+  SafetyStatOverview,
+  IncidentTypeStat,
+  SafetyStatItem,
+  HighRiskMemberItem,
+  HazardTypeStat,
+  EmergencyResponseStat,
+  GroundCondition,
+  WeatherCondition,
+  IncidentType,
+  IncidentSeverity,
+  HazardType,
+  RiskMemberStatus,
 } from '@/types'
 
 const api = axios.create({
@@ -166,6 +185,102 @@ export function useApi() {
         api.get<MemberCompletionRankItem[]>('/checklists/stats/member-rank').then((r) => r.data),
       getAbnormalTypes: () =>
         api.get<FrequentAbnormalTypeItem[]>('/checklists/stats/abnormal-types').then((r) => r.data),
+    },
+    safety: {
+      healthRecords: {
+        list: (memberId?: number) =>
+          api.get<MemberHealthRecord[]>('/safety/health-records' + (memberId ? `?member_id=${memberId}` : '')).then((r) => r.data),
+        get: (recordId: number) =>
+          api.get<MemberHealthRecord>(`/safety/health-records/${recordId}`).then((r) => r.data),
+        create: (data: { member_id: number; record_date: string; condition_type: string; description?: string; is_chronic?: boolean; needs_accommodation?: boolean; accommodation_notes?: string }) =>
+          api.post<MemberHealthRecord>('/safety/health-records', data).then((r) => r.data),
+        update: (recordId: number, data: { condition_type?: string; description?: string; is_chronic?: boolean; needs_accommodation?: boolean; accommodation_notes?: string }) =>
+          api.put<MemberHealthRecord>(`/safety/health-records/${recordId}`, data).then((r) => r.data),
+        delete: (recordId: number) =>
+          api.delete(`/safety/health-records/${recordId}`).then((r) => r.data),
+      },
+      getMemberWithHealth: (memberId: number) =>
+        api.get<MemberWithHealth>(`/safety/members/${memberId}/health`).then((r) => r.data),
+      checklists: {
+        list: (rehearsalId?: number) =>
+          api.get<TrainingSafetyChecklist[]>('/safety/checklists' + (rehearsalId ? `?rehearsal_id=${rehearsalId}` : '')).then((r) => r.data),
+        get: (checklistId: number) =>
+          api.get<TrainingSafetyChecklist>(`/safety/checklists/${checklistId}`).then((r) => r.data),
+        create: (data: { rehearsal_id: number; ground_condition: GroundCondition; ground_notes?: string; audio_cables_arranged?: boolean; audio_cables_notes?: string; members_illness_reported?: boolean; illness_notes?: string; weather_temperature?: number; weather_condition?: WeatherCondition; weather_notes?: string; drinking_water_provided?: boolean; rest_schedule_arranged?: boolean; rest_notes?: string; high_risk_moves_reminded?: boolean; high_risk_moves_notes?: string; created_by?: number }) =>
+          api.post<TrainingSafetyChecklist>('/safety/checklists', data).then((r) => r.data),
+        update: (checklistId: number, data: { ground_condition?: GroundCondition; ground_notes?: string; audio_cables_arranged?: boolean; audio_cables_notes?: string; members_illness_reported?: boolean; illness_notes?: string; weather_temperature?: number; weather_condition?: WeatherCondition; weather_notes?: string; drinking_water_provided?: boolean; rest_schedule_arranged?: boolean; rest_notes?: string; high_risk_moves_reminded?: boolean; high_risk_moves_notes?: string }) =>
+          api.put<TrainingSafetyChecklist>(`/safety/checklists/${checklistId}`, data).then((r) => r.data),
+        delete: (checklistId: number) =>
+          api.delete(`/safety/checklists/${checklistId}`).then((r) => r.data),
+        assessRisks: (checklistId: number) =>
+          api.get<RiskAssessment>(`/safety/checklists/${checklistId}/risk-assessment`).then((r) => r.data),
+      },
+      incidents: {
+        list: (checklistId?: number, memberId?: number) => {
+          let url = '/safety/incidents'
+          const params: string[] = []
+          if (checklistId) params.push(`checklist_id=${checklistId}`)
+          if (memberId) params.push(`member_id=${memberId}`)
+          if (params.length) url += '?' + params.join('&')
+          return api.get<EmergencyIncident[]>(url).then((r) => r.data)
+        },
+        get: (incidentId: number) =>
+          api.get<EmergencyIncident>(`/safety/incidents/${incidentId}`).then((r) => r.data),
+        create: (data: { checklist_id: number; member_id: number; incident_type: IncidentType; song_id?: number; position_id?: string; formation_position?: string; description?: string; severity?: IncidentSeverity; treatment_given?: string; treated_by?: string; family_notified?: boolean; family_notification_details?: string; community_leader_notified?: boolean; community_notification_details?: string; follow_up_required?: boolean; follow_up_notes?: string }) =>
+          api.post<EmergencyIncident>('/safety/incidents', data).then((r) => r.data),
+        update: (incidentId: number, data: { description?: string; severity?: IncidentSeverity; treatment_given?: string; treated_by?: string; family_notified?: boolean; family_notification_details?: string; community_leader_notified?: boolean; community_notification_details?: string; follow_up_required?: boolean; follow_up_notes?: string; resolved?: boolean }) =>
+          api.put<EmergencyIncident>(`/safety/incidents/${incidentId}`, data).then((r) => r.data),
+        resolve: (incidentId: number) =>
+          api.post<EmergencyIncident>(`/safety/incidents/${incidentId}/resolve`).then((r) => r.data),
+      },
+      riskMembers: {
+        list: (checklistId?: number, memberId?: number) => {
+          let url = '/safety/risk-members'
+          const params: string[] = []
+          if (checklistId) params.push(`checklist_id=${checklistId}`)
+          if (memberId) params.push(`member_id=${memberId}`)
+          if (params.length) url += '?' + params.join('&')
+          return api.get<RiskMember[]>(url).then((r) => r.data)
+        },
+        get: (riskMemberId: number) =>
+          api.get<RiskMember>(`/safety/risk-members/${riskMemberId}`).then((r) => r.data),
+        create: (data: { checklist_id: number; member_id: number; risk_level: string; risk_factors?: string; recommendation?: string }) =>
+          api.post<RiskMember>('/safety/risk-members', data).then((r) => r.data),
+        update: (riskMemberId: number, data: { risk_level?: string; risk_factors?: string; recommendation?: string; action_taken?: string; status?: RiskMemberStatus }) =>
+          api.put<RiskMember>(`/safety/risk-members/${riskMemberId}`, data).then((r) => r.data),
+      },
+      hazards: {
+        list: (rehearsalId?: number, unresolvedOnly?: boolean) => {
+          let url = '/safety/hazards'
+          const params: string[] = []
+          if (rehearsalId) params.push(`rehearsal_id=${rehearsalId}`)
+          if (unresolvedOnly) params.push(`unresolved_only=${unresolvedOnly}`)
+          if (params.length) url += '?' + params.join('&')
+          return api.get<VenueHazard[]>(url).then((r) => r.data)
+        },
+        get: (hazardId: number) =>
+          api.get<VenueHazard>(`/safety/hazards/${hazardId}`).then((r) => r.data),
+        create: (data: { rehearsal_id: number; hazard_type: HazardType; location?: string; description?: string; severity?: string; reported_by?: number }) =>
+          api.post<VenueHazard>('/safety/hazards', data).then((r) => r.data),
+        update: (hazardId: number, data: { hazard_type?: HazardType; location?: string; description?: string; severity?: string; resolved?: boolean; resolution_notes?: string }) =>
+          api.put<VenueHazard>(`/safety/hazards/${hazardId}`, data).then((r) => r.data),
+        resolve: (hazardId: number) =>
+          api.post<VenueHazard>(`/safety/hazards/${hazardId}/resolve`).then((r) => r.data),
+      },
+      stats: {
+        overview: () =>
+          api.get<SafetyStatOverview>('/safety/stats/overview').then((r) => r.data),
+        incidentTypes: () =>
+          api.get<IncidentTypeStat[]>('/safety/stats/incident-types').then((r) => r.data),
+        rehearsals: () =>
+          api.get<SafetyStatItem[]>('/safety/stats/rehearsals').then((r) => r.data),
+        highRiskMembers: () =>
+          api.get<HighRiskMemberItem[]>('/safety/stats/high-risk-members').then((r) => r.data),
+        hazardTypes: () =>
+          api.get<HazardTypeStat[]>('/safety/stats/hazard-types').then((r) => r.data),
+        emergencyResponse: () =>
+          api.get<EmergencyResponseStat>('/safety/stats/emergency-response').then((r) => r.data),
+      },
     },
   }
 }
